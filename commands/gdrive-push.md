@@ -23,6 +23,29 @@ The Google Drive **MCP connector cannot move or delete files**, so it cannot arc
 
 One-time setup if missing: `brew install rclone`, then `rclone config create gdrive drive scope=drive` and complete the Google sign-in **as the account that owns (or has Editor on) the destination folder**.
 
+## The archive convention
+
+The archive subfolder is **`archive/`**. Some older course folders use **`old versions/`** — when you meet one, **merge it into `archive/`** (server-side move, never delete) and remove the empty folder, so every course has one archive convention:
+
+```bash
+rclone move "gdrive:<Folder>/old versions" "gdrive:<Folder>/archive" --drive-root-folder-id <ID>
+rclone rmdir "gdrive:<Folder>/old versions" --drive-root-folder-id <ID>
+```
+
+**rclone will not archive into a subfolder of the destination** — `--backup-dir` inside the destination fails with *"destination and parameter to --backup-dir mustn't overlap"*. So when the archive lives **inside** the target folder (as `archive/` does), do it in two steps: **first `rclone moveto` each superseded file into `<Folder>/archive/<YYYY-MM-DD>/`, then `rclone copy` the new files in.** Do not reach for `--backup-dir`.
+
+Watch for folder names with a **trailing space** (e.g. `"Assessment "`) — quote every remote path.
+
+## Assessment sharing
+
+The **question papers** (WA, PP, Case Study) must be **anyone-with-link (viewer)** so learners can open them from the LMS. Emit and check their links:
+
+```bash
+rclone link "gdrive:Assessment /<WA or PP/CS question paper>.docx" --drive-root-folder-id <ID>
+```
+
+The **answer keys** (`Answer to …` / `Answers to …`) stay in the Drive folder for the trainer — they are **not** linked out, **not** attached to the LMS, and **never** pushed to GitHub.
+
 ## Steps
 
 1. **Sweep local junk** so it can't be pushed:

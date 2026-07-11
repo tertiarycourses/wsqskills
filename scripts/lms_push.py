@@ -43,7 +43,14 @@ FOLDERS = {
     "trainer_slides": ("Master Trainer Slides", "trainer slide"),
     "learner_guide": ("Learner Guide", "learner guide"),
     "lesson_plan": ("Lesson Plan", "lesson plan"),
+    "assessment": ("Assessment", "assessment"),
 }
+
+
+def is_answer_key(name):
+    """'Answer to …' / 'Answers to …' — the marking guide. TRAINER-ONLY: it lives on Drive and
+    is NEVER attached to the LMS, a learner-visible field, or GitHub."""
+    return re.match(r"^\s*answers?\s+to\b", name.strip(), re.I) is not None
 
 
 # ---------------------------------------------------------------- Google Drive
@@ -143,6 +150,32 @@ def collect_links(root):
     take("slidesUrl", "learner_guide", lambda n: pdf(n) and not is_learner_guide(n), "learner slides .pdf")
     take("learnerGuideUrl", "learner_guide", lambda n: pdf(n) and is_learner_guide(n), "learner guide .pdf")
     take("lessonPlanUrl", "lesson_plan", pdf, "lesson plan .pdf")
+
+    # ---- the assessment: QUESTION PAPERS ONLY. Answer keys are trainer-only and never
+    # reach the LMS, so they are filtered out before anything is picked.
+    docx = lambda n: n.lower().endswith(".docx") and not is_answer_key(n)
+    take("writtenAssessmentLink", "assessment",
+         lambda n: docx(n) and re.match(r"^\s*wa\b|written assessment", n, re.I),
+         "WA (SAQ) question paper .docx")
+    # The practical instrument is EITHER a Case Study OR a Practical Performance — never both.
+    take("caseStudyLink", "assessment",
+         lambda n: docx(n) and re.search(r"case study|\(cs\)", n, re.I),
+         "Case Study (CS) question paper .docx")
+    take("practicalPerformanceAssessmentLink", "assessment",
+         lambda n: docx(n) and re.search(r"^\s*pp\b|practical performance|\(pp\)", n, re.I),
+         "PP question paper .docx")
+
+    # A course has exactly ONE practical instrument — a Case Study or a PP, never both.
+    # Whichever paper is on Drive IS the instrument; the absence of the other is not "missing",
+    # so drop its complaint. (The one that is absent gets cleared on the LMS — see build_payload.)
+    cs, pp = "caseStudyLink", "practicalPerformanceAssessmentLink"
+    if cs in out and pp in out:
+        raise SystemExit(
+            "BOTH a Case Study and a PP question paper are on Drive — a course has ONE practical "
+            "instrument. Remove the wrong one from the Drive Assessment folder and re-run.")
+    absent = pp if cs in out else (cs if pp in out else None)
+    if absent:
+        missing[:] = [m for m in missing if not m.startswith(FIELD_LABELS[absent])]
 
     return out, missing
 
@@ -275,6 +308,29 @@ def build_payload(course, urls):
         for a in course.get("assessments", [])
     ]
     payload.update({k: v[1] for k, v in urls.items()})
+
+    # ---- assessment links. The LMS stores each instrument twice: a flat *Link column AND an
+    # entry in assessmentMethods{} (link + enabled) — the course page renders the latter, so
+    # both must be written or the page keeps showing the old document.
+    methods = dict(payload.get("assessmentMethods") or {})
+
+    def set_method(key, url):
+        methods[key] = {"link": url or "", "enabled": bool(url)}
+
+    if "writtenAssessmentLink" in urls:
+        set_method("writtenAssessment", urls["writtenAssessmentLink"][1])
+
+    # ONE practical instrument: set the one we have, and CLEAR the other so a stale link
+    # (e.g. a PP doc left behind on a Case Study course) cannot survive on the LMS.
+    cs_url = urls.get("caseStudyLink", (None, None))[1]
+    pp_url = urls.get("practicalPerformanceAssessmentLink", (None, None))[1]
+    if cs_url or pp_url:
+        set_method("caseStudy", cs_url)
+        set_method("practicalExam", pp_url)
+        payload["practicalPerformanceAssessmentLink"] = pp_url or ""
+
+    payload["assessmentMethods"] = methods
+    payload.pop("caseStudyLink", None)   # not a real column — it lives in assessmentMethods
     return payload
 
 
@@ -285,6 +341,9 @@ FIELD_LABELS = {
     "slidesUrl": "Learner Slides URL",
     "learnerGuideUrl": "Learner Guide URL",
     "lessonPlanUrl": "Lesson Plan URL",
+    "writtenAssessmentLink": "Written Assessment (question paper)",
+    "caseStudyLink": "Case Study (question paper)",
+    "practicalPerformanceAssessmentLink": "Practical Performance (question paper)",
 }
 
 
@@ -391,9 +450,24 @@ def main():
     after = (get_json(f"{API}/api/courses/edit-data?courseId={course_id}") or {}).get("data", {})
     ok = True
     print("\nVerification (read back from LMS-TMS, then fetch each link):")
+    def stored_value(field):
+        """Read the field back. caseStudy has no flat column — it lives in assessmentMethods,
+        which is also what the course page renders."""
+        if field == "caseStudyLink":
+            return ((after.get("assessmentMethods") or {}).get("caseStudy") or {}).get("link")
+        return after.get(field)
+
+    def same_file(a, b):
+        """The LMS normalises Drive URLs (it drops ?usp=sharing), so compare by file ID."""
+        fid = lambda u: (re.search(r"/d/([\w-]+)|[?&]id=([\w-]+)", u or "") or None)
+        ma, mb = fid(a), fid(b)
+        if ma and mb:
+            return (ma.group(1) or ma.group(2)) == (mb.group(1) or mb.group(2))
+        return a == b
+
     for field, (name, url) in urls.items():
-        got = after.get(field)
-        stored = got == url
+        got = stored_value(field)
+        stored = same_file(got, url)
         live, detail = check_link(got) if got else (False, "no URL stored")
         good = stored and live
         ok &= good

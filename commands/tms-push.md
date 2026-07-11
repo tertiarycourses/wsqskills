@@ -42,6 +42,20 @@ Write this course's Google Drive links into its course record on **lms-tms.terti
 4. **Confirm the course is the right one**, then push for real.
 5. The script re-reads the course afterwards and prints ✓/✗ per URL, plus a check that no other column was blanked. **Report that verification; never claim success on a ✗.**
 
+## Where the assessment actually lives on the LMS
+
+The LMS stores each instrument **twice**, and the course page renders the **`assessmentMethods`** entry — so **both** must be written, or the page keeps showing the old document even though the flat column looks updated:
+
+| Instrument | Flat column | `assessmentMethods` entry |
+|---|---|---|
+| Written Assessment | `writtenAssessmentLink` | `writtenAssessment` → `{link, enabled: true}` |
+| Case Study | *(none — lives only in `assessmentMethods`)* | `caseStudy` → `{link, enabled: true}` |
+| Practical Performance | `practicalPerformanceAssessmentLink` | `practicalExam` → `{link, enabled: true}` |
+
+A course has **exactly one** practical instrument. Set the one it has and **clear the other** (`{link: "", enabled: false}`) — otherwise a stale PP link survives on a Case Study course, which is precisely how the LMS ends up serving the wrong paper. `lms_push.py` does this automatically from whichever question paper it finds on Drive, and aborts if it finds both.
+
+Note the LMS **normalises Drive URLs** (it strips `?usp=sharing`), so verify by **file ID**, not by string equality.
+
 ## The answer-key rule
 
 **Any file named `Answer to …` / `Answers to …` is trainer-only.** It stays in the Google Drive courseware folder and is **never** attached to the LMS, **never** placed on a learner-visible field, and **never** pushed to GitHub. Filter before attaching:
