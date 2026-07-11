@@ -19,6 +19,9 @@ npx github:tertiarycourses/wsqskills --user
 
 # overwrite files that already exist (careful: may clobber a course-customised generator)
 npx github:tertiarycourses/wsqskills --force
+
+# also install the ATO-only skills (create-tms-ato, gdrive-push-ato) into a project
+npx github:tertiarycourses/wsqskills --ato
 ```
 
 The installer copies `skills/`, `commands/`, `agents/` and `hooks/` into the target `.claude/` directory and registers the three hooks in its `settings.json`. **Existing files are never overwritten unless you pass `--force`** — a course repo often carries a course-customised generator, and clobbering it would destroy work.
@@ -65,7 +68,10 @@ Or, once installed, use the bundled command:
 | `wsq-learner-guide` / `tertiary-learner-guide` | Learner Guide DOCX + aligned Markdown mirror. |
 | `wsq-assessment` | **WA (SAQ)** + **PP or Case Study**, each as a question paper and an answer key. Enforces: follow the original paper, do not change the question count, do not change the instrument type, and full K/A coverage. |
 | `tertiary-course-slides` / `tertiary-ppt-design` | python-pptx deck generator and the visual design system it uses. |
-| `create-tms-ato` | Client-branded Training Management System document for an ATO / SSG submission. |
+| `create-tms-ato` **(ATO-only)** | Client-branded Training Management System document for an ATO / SSG submission. |
+| `gdrive-push-ato` **(ATO-only)** | Push TMS / ATO supporting docs to a Drive folder, archiving superseded versions. |
+
+**ATO-only skills** are *not* installed into a course repo by default — an ordinary course is not an ATO submission. They install at user level (`--user`), or into a project with `--ato`.
 
 ### Commands
 

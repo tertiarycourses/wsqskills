@@ -5,6 +5,7 @@
  *   npx github:tertiarycourses/wsqskills            # install into this project's ./.claude
  *   npx github:tertiarycourses/wsqskills --user     # install into ~/.claude (all projects)
  *   npx github:tertiarycourses/wsqskills --force    # overwrite files that already exist
+ *   npx github:tertiarycourses/wsqskills --ato      # also install the ATO-only skills
  *
  * Copies the WSQ courseware skills, slash commands, the courseware-qa agent, the push scripts
  * and the three courseware hooks into a .claude directory, and registers the hooks in settings.json.
@@ -19,15 +20,23 @@ const os = require("os");
 const args = new Set(process.argv.slice(2));
 const USER = args.has("--user") || args.has("-u");
 const FORCE = args.has("--force") || args.has("-f");
+// ATO-only skills (TMS document + ATO Drive push). Not wanted in an ordinary course repo —
+// install them with --ato, or at user level where they're available when you need them.
+const ATO = args.has("--ato");
+const ATO_SKILLS = new Set(["create-tms-ato", "gdrive-push-ato"]);
 const SRC = path.join(__dirname, "..");
 const DEST = USER ? path.join(os.homedir(), ".claude") : path.join(process.cwd(), ".claude");
 
 let copied = 0, skipped = 0;
 
-function copyTree(src, dest) {
+function copyTree(src, dest, isSkillsRoot = false) {
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
     if (entry.name === "__pycache__" || entry.name === ".DS_Store") continue;
+    if (isSkillsRoot && ATO_SKILLS.has(entry.name) && !ATO && !USER) {
+      console.log(`  skip (ATO-only, pass --ato): skills/${entry.name}`);
+      continue;
+    }
     const s = path.join(src, entry.name);
     const d = path.join(dest, entry.name);
     if (entry.isDirectory()) {
@@ -80,7 +89,7 @@ function registerHooks() {
 console.log(`\nInstalling wsqskills into ${DEST}${FORCE ? " (force)" : ""}\n`);
 for (const dir of ["skills", "commands", "agents", "hooks", "scripts"]) {
   const src = path.join(SRC, dir);
-  if (fs.existsSync(src)) copyTree(src, path.join(DEST, dir));
+  if (fs.existsSync(src)) copyTree(src, path.join(DEST, dir), dir === "skills");
 }
 registerHooks();
 
