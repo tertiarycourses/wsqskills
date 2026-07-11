@@ -45,7 +45,8 @@ Inside Claude Code, in the course repo:
 Or, once installed, use the bundled command:
 
 ```
-/wsq-setup          # import/update the WSQ skills from ~/.claude into this project
+/wsq-setup                # update this project's toolchain from GitHub
+/wsq-setup --user         # update ~/.claude
 ```
 
 ### Verify
@@ -82,7 +83,7 @@ Or, once installed, use the bundled command:
 | `/courseware-qa` | Audits the deck, LP, LG, labs **and the assessment set** against the published standards — renders pages to images and reports pass/fail. |
 | `/gdrive-push` | Push the courseware to the Drive folder (archiving superseded versions) and emit the viewer links. |
 | `/tms-push` | Set the courseware URLs on the LMS-TMS course record and attach the assessment — **question papers only; the answer keys never reach the LMS**. |
-| `/wsq-setup`, `/importwsq` | Import/update the WSQ skills into the current project. |
+| `/wsq-setup` | Install/update this whole toolchain in a project (or at user level) — runs the installer below. |
 
 The push logic lives in the **commands** (with their scripts in `scripts/`), not in skills.
 
