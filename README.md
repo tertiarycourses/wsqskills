@@ -69,6 +69,7 @@ Or, once installed, use the bundled command:
 | `wsq-learner-guide` / `tertiary-learner-guide` | Learner Guide DOCX + aligned Markdown mirror. |
 | `wsq-assessment` | **WA (SAQ)** + **PP or Case Study**, each as a question paper and an answer key. Enforces: follow the original paper, do not change the question count, do not change the instrument type, and full K/A coverage. |
 | `tertiary-course-slides` / `tertiary-ppt-design` | python-pptx deck generator and the visual design system it uses. |
+| `gdrive-push` | Push a course's courseware (slides PPT/PDF, LG, LP, assessments, labs) to its Google Drive folder — resolved from the course's **Courseware Link on LMS-TMS**, keyed on the `TGS-` code read out of the courseware itself. Archives superseded files (never deletes), then emits the verified LMS link block. |
 | `create-tms-ato` **(ATO-only)** | Client-branded Training Management System document for an ATO / SSG submission. |
 | `gdrive-push-ato` **(ATO-only)** | Push TMS / ATO supporting docs to a Drive folder, archiving superseded versions. |
 
