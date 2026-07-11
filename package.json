@@ -1,0 +1,20 @@
+{
+  "name": "wsqskills",
+  "version": "1.0.0",
+  "description": "Claude Code skills, slash commands, agent and hooks for building WSQ courseware (slide deck, Lesson Plan, Learner Guide, assessments) to the Tertiary Infotech Academy house standards.",
+  "bin": {
+    "wsqskills": "bin/install.js"
+  },
+  "scripts": {
+    "install-project": "node bin/install.js",
+    "install-user": "node bin/install.js --user"
+  },
+  "keywords": ["claude-code", "skills", "wsq", "courseware", "tertiary-infotech"],
+  "license": "UNLICENSED",
+  "author": "Tertiary Infotech Academy Pte Ltd",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tertiarycourses/wsqskills.git"
+  },
+  "files": ["bin", "skills", "commands", "agents", "hooks"]
+}
