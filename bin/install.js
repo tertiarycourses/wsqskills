@@ -6,8 +6,8 @@
  *   npx github:tertiarycourses/wsqskills --user     # install into ~/.claude (all projects)
  *   npx github:tertiarycourses/wsqskills --force    # overwrite files that already exist
  *
- * Copies the WSQ courseware skills, slash commands, the courseware-qa agent and the three
- * courseware hooks into a .claude directory, and registers the hooks in settings.json.
+ * Copies the WSQ courseware skills, slash commands, the courseware-qa agent, the push scripts
+ * and the three courseware hooks into a .claude directory, and registers the hooks in settings.json.
  *
  * Existing files are NEVER overwritten without --force: a course repo may carry a
  * course-customised generator, and clobbering it would destroy work.
@@ -78,7 +78,7 @@ function registerHooks() {
 }
 
 console.log(`\nInstalling wsqskills into ${DEST}${FORCE ? " (force)" : ""}\n`);
-for (const dir of ["skills", "commands", "agents", "hooks"]) {
+for (const dir of ["skills", "commands", "agents", "hooks", "scripts"]) {
   const src = path.join(SRC, dir);
   if (fs.existsSync(src)) copyTree(src, path.join(DEST, dir));
 }

@@ -65,18 +65,22 @@ Or, once installed, use the bundled command:
 | `wsq-learner-guide` / `tertiary-learner-guide` | Learner Guide DOCX + aligned Markdown mirror. |
 | `wsq-assessment` | **WA (SAQ)** + **PP or Case Study**, each as a question paper and an answer key. Enforces: follow the original paper, do not change the question count, do not change the instrument type, and full K/A coverage. |
 | `tertiary-course-slides` / `tertiary-ppt-design` | python-pptx deck generator and the visual design system it uses. |
-| `gdrive-push` / `gdrive-push-ato` | Publish courseware to the Google Drive folder, archiving superseded versions. |
-| `lms-push` | Set the Trainer Slides / Learner Slides / LG / LP URLs on the LMS-TMS course record. |
 | `create-tms-ato` | Client-branded Training Management System document for an ATO / SSG submission. |
 
 ### Commands
 
 | Command | What it does |
 |---|---|
-| `/courseware-qa` | Audits the deck, LP, LG **and the assessment set** against the house standards — renders pages to images and reports pass/fail. |
-| `/gdrive-push` | Push the courseware to the Drive folder and emit the verified link block. |
-| `/lms-push` | Sync the Drive links into the LMS-TMS course record. |
+| `/courseware-gen` | Generate the PPT, LP and LG **plus their PDFs**, archive superseded versions, then audit. |
+| `/assessment-gen` | Generate the WA (SAQ) + PP/Case Study — question papers and answer keys — mirroring the original paper. |
+| `/courseware-qa` | Audits the deck, LP, LG, labs **and the assessment set** against the published standards — renders pages to images and reports pass/fail. |
+| `/gdrive-push` | Push the courseware to the Drive folder (archiving superseded versions) and emit the viewer links. |
+| `/tms-push` | Set the courseware URLs on the LMS-TMS course record and attach the assessment — **question papers only; the answer keys never reach the LMS**. |
 | `/wsq-setup`, `/importwsq` | Import/update the WSQ skills into the current project. |
+
+The push logic lives in the **commands** (with their scripts in `scripts/`), not in skills.
+
+**The pipeline:** `/courseware-gen` → `/assessment-gen` → `/courseware-qa` → `/gdrive-push` → `/tms-push`
 
 ### Agent
 

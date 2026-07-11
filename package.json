@@ -16,5 +16,5 @@
     "type": "git",
     "url": "https://github.com/tertiarycourses/wsqskills.git"
   },
-  "files": ["bin", "skills", "commands", "agents", "hooks"]
+  "files": ["bin", "skills", "commands", "agents", "hooks", "scripts"]
 }
