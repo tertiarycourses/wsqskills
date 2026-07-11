@@ -1,6 +1,6 @@
 ---
 name: gdrive-push-ato
-description: Upload one or more local documents (TMS and other ATO supporting docs) to a user-provided Google Drive folder, moving any superseded Drive file into an `archive` subfolder first (only when the file actually changed), and remove stray macOS .DS_Store / Office lock junk locally before upload. Use when the user asks to "push to Drive", "gdrive push", "upload to Google Drive", "upload the TMS/document to Drive", "archive the old version", or "replace the material" in a Drive folder. ALWAYS requires the user to provide the destination Google Drive folder link.
+description: Upload one or more local documents (TMS, courseware and other ATO supporting docs) to a user-provided Google Drive folder, moving any superseded Drive file into an `archive` subfolder first (only when the file actually changed), and remove stray macOS .DS_Store / Office lock junk locally before upload. Then add the assessment to the LMS course record — the WA (SAQ) question paper and the PP or Case Study question paper ONLY; the answer keys are trainer-only and are NEVER uploaded to the LMS. Use when the user asks to "push to Drive", "gdrive push", "upload to Google Drive", "upload the TMS/document to Drive", "archive the old version", or "replace the material" in a Drive folder. ALWAYS requires the user to provide the destination Google Drive folder link.
 ---
 
 # GDrive Push (ATO)
@@ -38,6 +38,36 @@ for it (AskUserQuestion) and wait. The link is
 profile and is NOT part of the ID). The folder ID is the last path segment. Confirm it before
 the first real (non-dry-run) upload.
 
+## HARD RULE — assessments on the LMS: QUESTION PAPERS ONLY, NEVER the answer keys
+
+When this skill runs for a WSQ course, it also **adds the assessment to the LMS** course record
+(lms-tms.tertiaryinfotech.com), after the Drive upload. Exactly **two** documents are attached —
+both are the **question papers the learner sits**:
+
+| LMS field | Upload | Local file |
+|---|---|---|
+| **Written Assessment** | the **WA (SAQ)** question paper | `assessment/WA (SAQ) - <Title> - <VER>.docx` |
+| **Practical Performance** *or* **Case Study** | the **PP** *or* **CS** question paper — whichever instrument the course uses | `assessment/PP Assessment - <Title> - <VER>.docx` **or** `assessment/Case Study (CS) - <Title> - <VER>.docx` |
+
+**NEVER upload an answer key / model answer / marking guide to the LMS.** Any file whose name
+begins with `Answer to …` or `Answers to …` is a **trainer-only** document: it stays in the
+Google Drive courseware folder (trainer access) and is **never** attached to the LMS, never
+linked in a learner-visible field, and never pushed to GitHub. Before attaching anything, filter
+the file list:
+
+```bash
+# the ONLY two files eligible for the LMS
+ls assessment/*.docx | grep -viE '^.*/(Answer|Answers) to '
+```
+
+If that filter yields anything other than the WA paper plus exactly one PP/CS paper, **stop and
+tell the user** — do not guess which file to attach.
+
+Use the course's own **Courseware Link** field (read via the LMS API, as the `lms-push` skill
+does) to locate the Drive folder, and set the assessment fields to the Drive links of those two
+question papers. Report which two files were attached, and state explicitly that the answer keys
+were withheld.
+
 ## Steps
 
 1. **Confirm inputs**: the destination folder link, and which local folder/files to upload.
@@ -73,9 +103,15 @@ the first real (non-dry-run) upload.
 6. **New subfolders / loose files**: for a local file whose subfolder doesn't exist on Drive
    yet, `rclone copyto "<local>/path" "gdrive:path" --drive-root-folder-id <FOLDER_ID>` (rclone
    creates parents). Nothing to archive for brand-new paths.
-7. **Report** per subfolder: what was uploaded (with links), what was archived and to where,
+7. **Attach the assessment to the LMS** (WSQ courses): take the **WA (SAQ) question paper** and
+   the **PP or Case Study question paper** — and nothing else — and set them on the course record
+   at lms-tms.tertiaryinfotech.com. **Filter out every `Answer to …` / `Answers to …` file first.**
+   See the HARD RULE above. If the course has no assessment folder, skip this step and say so.
+8. **Report** per subfolder: what was uploaded (with links), what was archived and to where,
    and what was skipped as unchanged. To emit "anyone with the link can view" links, run
    `rclone link "gdrive:S/<file>" --drive-root-folder-id <FOLDER_ID>` per file and include them.
+   State which two assessment papers were attached to the LMS, and that the answer keys were
+   withheld as trainer-only.
 
 ## Drive `.DS_Store` note
 
@@ -87,6 +123,8 @@ manual route (Drive web UI → search within the folder → Remove) since nothin
 
 ## Notes
 
+- **Answer keys never leave the trainer's hands**: not to the LMS, not to a learner-visible field,
+  not to GitHub. Drive (trainer folder) only.
 - Never archive or re-upload an unchanged file — touch only what changed.
 - Never delete anything on Drive; superseded files are **moved to `archive/`**, never removed.
   A file that cannot be moved is reported as a WARNING and skipped, never deleted.
