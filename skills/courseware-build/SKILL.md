@@ -61,3 +61,13 @@ Copy this skill into the new course's `.claude/skills/courseware-build/`, replac
 `data_domainN.py` with the new course's content, drop the course badge into `assets/`, and run the
 orchestrator. The engine files (build_*.py, prodoc.py, inject_toc.py, build_courseware.sh) are reused
 unchanged.
+
+
+## Course ed-tool (NovaSPC pattern)
+
+If the course has a companion ed-tool (e.g. NovaSPC, https://alfredang.github.io/novaspc/, for the
+SPC course), it is part of the single source: each activity dict carries the tool in `services`, a
+tool step inside `steps`/`flow`, and a `csv=dict(name=..., rows=[[header],[...]])` data set. The LG
+builder writes every `csv` to **labs/data/<name>.csv** and the lab files link it; the slide builder
+renders an ed-tool intro slide in the admin block. Expected tool outputs (centre lines, limits,
+OOC counts, Cp/Cpk/Pp/Ppk) belong in each activity's `test` so learners can self-verify.

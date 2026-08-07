@@ -38,3 +38,33 @@ Apply these when generating or refining a course/training deck (python-pptx).
 - Reuse helper functions (`content`, `two_col`, `cards3`, `website_slide`, `gallery_slide`, `img_slide`, `big_statement`, `section`, `step_slide`) so spacing/fonts stay uniform.
 
 Implementation lives in the **tertiary-course-slides** skill (`make_slides.py`).
+
+## COMPACT v2 component specs (proven on the SPC deck, TGS-2026064862)
+
+Full runnable reference: `wsq-slides/reference/compact/` (build_slides.py + make_charts.py +
+worked-example content). Key measurements (16:9, 13.333×7.5 in, content area x 0.85–12.48 in,
+y 1.95–6.65 in, footer at y 7.05):
+
+- **img_points**: image aspect-fit to ~7.0 in wide × 4.75 in tall on the left; 3–4 takeaway
+  tiles on the right, each `LIGHT` panel + 0.09 in colour bar, title 14 pt bold in the palette
+  colour, caption 12 pt ink. THE default concept slide — beats any bullet wall.
+- **img_full**: image aspect-fit to 11.6 in, centred; optional caption band (LIGHT, 14 pt) at
+  y 6.3. For family portraits (all four attribute charts) and big comparisons.
+- **table_slide**: header row in BLUE with white 13 pt bold; body rows alternate LIGHT/WHITE
+  with LINE borders; first column bold; per-column width fractions; ≤ 8 rows.
+- **formula_slide**: 2–3 panels; each LIGHT with 0.1 in top colour bar, heading 16 pt, formula
+  in a NAVY box (15 pt bold, light-blue #9CDCFE), caption 12.5 pt grey.
+- **activity_slide**: teal kicker `TOPIC 0X · HANDS-ON ACTIVITY`; top-right badge
+  `ACTIVITY N · M MIN`; scenario ≤ 3 lines at 15 pt; 5 chips (0.56 in numbered circles, labels
+  11.5 pt, ▶ connectors); green `YOU'LL PRODUCE` band; grey Tools line naming the ed-tool +
+  data file + "Full step-by-step guide: Learner Guide, Activity N".
+- **browser-mock slides** (LMS / ed-tool): white card with traffic-light dots, URL pill, nav or
+  content mock inside; numbered how-to tiles on the right; one summary line under both.
+- **Chart assets** (make_charts.py): matplotlib, Arial, white bg, palette #1F6FEB/#10B981/
+  #7C3AED/#F59E0B (+#DC2626 for limits/defects), 150 dpi, bbox_inches="tight". Draw from the
+  SAME numbers the labs use. Pitfalls that cost QA rounds: suptitle needs
+  `tight_layout(rect=[0,0,1,0.86])`; stacked subplots need `h_pad ≥ 2`; labels on lines need a
+  white bbox; avoid non-Arial glyphs (e.g. superscript minus U+207B).
+- **Titles ≤ ~48 chars** at 28 pt or they wrap into the divider rule.
+- **slide_map.json**: `mark(key)` before each section/activity; the LP builder reads it so
+  schedule slide references never drift from the deck.

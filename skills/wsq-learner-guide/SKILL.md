@@ -128,3 +128,13 @@ Every content update to a courseware artifact MUST, in the same change:
 3. **Regenerate the outputs**, remove (`git rm`) the superseded versioned files, and update any references to the versioned filename (README, slides that cite the document, etc.).
 
 Never regenerate an artifact with content changes while keeping the old version number.
+
+
+## Course ed-tool (NovaSPC pattern)
+
+When the course uses a companion ed-tool (e.g. NovaSPC, https://alfredang.github.io/novaspc/), the
+Learner Guide must include: (1) the tool in **Before You Start — What You Need**; (2) a
+**"how every activity uses it"** subsection walking the tool's actual UI (Data Input → chart panel
+→ Generate Chart → Statistics tiles → Analysis → Export); (3) per-activity steps that upload the
+activity's labs/data/*.csv and compare the tool's statistics with the hand computation, with the
+expected numbers stated so learners can self-verify.

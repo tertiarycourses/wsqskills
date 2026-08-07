@@ -282,3 +282,40 @@ enable the Pages site, and skip any "deploy static site" phase for these repos. 
 repo homepage should point to the course page on www.tertiarycourses.com.sg instead.
 Lab web apps are run locally by learners (or demoed via localhost) — they don't need
 a hosted deployment.
+
+
+## Course ed-tool integration (NovaSPC pattern)
+
+When the course has a companion **ed-tool** (e.g. the SPC course uses **NovaSPC**,
+https://alfredang.github.io/novaspc/ — CSV upload, c/u/np/p and X-mR/X̄-R/X̄-s chart panels,
+Distribution and Process Capability analysis, PNG/CSV export), the deck must:
+
+1. Carry ONE **ed-tool introduction slide** in the admin block (after Download Course Material):
+   a browser-mockup card of the tool (URL bar + left navigation + statistics tiles) beside a
+   numbered "how every activity uses it" tile column — same visual grammar as the LMS slide.
+   Never a bare text link.
+2. Name the ed-tool (with URL) and the activity's data file (labs/data/*.csv) in every
+   **activity workflow slide's Tools line**, and put the tool step inside the workflow strip
+   (e.g. "Upload thickness.csv to NovaSPC" → "X̄-R Chart → Generate → compare").
+3. Keep the pedagogy **hand-compute first, tool confirms second** — the workflow strip shows the
+   hand computation before the tool verification, so the tool never replaces the taught method.
+
+## COMPACT v2 format — preferred for new decks
+
+For new or revamped decks, prefer the **compact information-dense format** in
+`reference/compact/` (worked example: the SPC course, TGS-2026064862 v14; visual grammar of the
+Business Process Automation reference deck). It extends the classic component set with:
+
+- `img_points` (chart image + colour-coded takeaway tiles — the workhorse concept slide) and
+  `img_full` (full-width visual + caption band), fed by matplotlib assets from
+  `reference/compact/make_charts.py` drawn from the SAME numbers the activities use
+- `table_slide` (styled decision/comparison tables) and `formula_slide` (dark formula panels)
+- `activity_slide` — ONE workflow slide per hands-on activity (badge + scenario + 5-chip
+  numbered strip + "YOU'LL PRODUCE" band + Tools line); never step-per-slide runs
+- browser-mockup slides for the LMS portal and any course ed-tool (never a bare text link)
+- `slide_map.json` export so the Lesson Plan cites exact slide ranges
+
+Layout rules that keep QA green: titles ≤ ~48 chars (or they wrap into the divider);
+`tight_layout(rect=[0,0,1,0.86])` under matplotlib suptitles; `h_pad ≥ 2` for stacked subplots;
+white bbox behind any label sitting ON a chart line; Arial-only glyphs; every generated asset
+must be placed on a slide; aspect-fit images with PIL — never stretch.

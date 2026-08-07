@@ -689,7 +689,7 @@ p("You're done — congratulations! Keep your local n8n running to continue buil
 VERSION = "6.1"
 VERSIONS = [
     ("1.0", "2 Feb 2023", "First version", "Dr. Alfred Ang"),
-    ("2.0", "16 June 2025", "Updated course title and content", "Tertiary Infotech Pte Ltd"),
+    ("2.0", "16 June 2025", "Updated course title and content", "Tertiary Infotech Academy Pte Ltd"),
     ("3.0", "24 June 2026", "Restructured to 8 activities; aligned to the agentic n8n flow "
                             "(Telegram agents, RAG, webhooks, APIs, guardrails); MD and DOCX aligned",
      "Tertiary Infotech Academy Pte Ltd"),

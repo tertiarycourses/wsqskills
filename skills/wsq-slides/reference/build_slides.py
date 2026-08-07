@@ -238,8 +238,8 @@ trainer_slide("YOUR TRAINER · GENERAL","Your Trainer","General Trainer template
  [("Name",""),("Title / Designation",""),("Qualifications",""),
   ("Areas of expertise",""),("Training & industry experience",""),("Contact","")],
  initials="?",accent=GREY)
-trainer_slide("YOUR TRAINER",C.TRAINER,"Principal Trainer\nTertiary Infotech Academy Pte. Ltd.",
- [("Role","Principal Trainer, Tertiary Infotech Academy Pte. Ltd."),
+trainer_slide("YOUR TRAINER",C.TRAINER,"Principal Trainer\nTertiary Infotech Academy Pte Ltd",
+ [("Role","Principal Trainer, Tertiary Infotech Academy Pte Ltd"),
   ("Certification","Microsoft Azure certified — cloud infrastructure, DevOps & automation."),
   ("Delivers","WSQ courses on Azure, cloud administration & software engineering."),
   ("Founder","Founder and lead instructor at Tertiary Infotech / Tertiary Courses.")],

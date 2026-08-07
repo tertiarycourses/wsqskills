@@ -207,7 +207,7 @@ content("Digital Attendance (Mandatory)",[
  "Scan the QR code with your mobile phone camera and submit your attendance.",
  "A minimum of 75% attendance is required to be eligible for assessment and funding."],kicker="TRAQOM · SSG DIGITAL ATTENDANCE")
 content("About the Trainer",[
- "Dr. Alfred Ang — Principal Trainer, Tertiary Infotech Academy Pte. Ltd.",
+ "Dr. Alfred Ang — Principal Trainer, Tertiary Infotech Academy Pte Ltd",
  "PhD; specialises in Artificial Intelligence, automation and software engineering.",
  "Designs and delivers WSQ courses on AI agents, automation (n8n) and app development.",
  "Founder and lead instructor at Tertiary Infotech / Tertiary Courses."],kicker="YOUR TRAINER")
