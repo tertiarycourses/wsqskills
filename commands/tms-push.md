@@ -48,8 +48,15 @@ If every source is empty the API returns **401** — stop and ask the user for t
    | **Written Assessment** | the **WA (SAQ) question paper** — `WA (SAQ) - <Title> - <VER>.docx` |
    | **Practical Performance** *or* **Case Study** | the **PP** *or* **CS** question paper — whichever instrument this course uses |
 
+   **Question-paper filenames the resolver accepts.** House naming varies between courses, and a
+   paper the resolver does not recognise is reported as *missing* — so the LMS silently keeps
+   serving the old document. Both spellings of each instrument resolve:
+   - **Case Study** — `Case Study …`, `… (CS) …`, or a leading `CS ` (e.g. `CS Assessment - <Title> - <VER>.docx`).
+   - **Practical Performance** — `Practical Performance …`, `Practical Test …`, `… (PP) …`, or a leading `PP `.
+
    If the script reports it passed over other candidate files, surface that — it is how a stale deck gets caught.
 3. **If a PDF is missing**, the script aborts and names the field. Do not invent a link and do not silently fall back to the `.docx`. Tell the user, and offer to convert the newest DOCX in that Drive folder to PDF and upload it, or re-run with `--allow-missing` to set only the found fields.
+   To write **one** verified field while others are still blocked on QA, use `--only <field>` (repeatable, e.g. `--only activitiesUrl`) — every field not listed keeps its current LMS value rather than being blanked.
 4. **Confirm the course is the right one**, then push for real.
 5. The script re-reads the course afterwards and prints ✓/✗ per URL, plus a check that no other column was blanked. **Report that verification; never claim success on a ✗.**
 

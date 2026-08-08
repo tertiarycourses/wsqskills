@@ -37,7 +37,70 @@ import urllib.request
 
 REMOTE = os.environ.get("GDRIVE_REMOTE", "gdrive")
 API = os.environ.get("LMS_TMS_API", "https://lms-tms.tertiaryinfotech.com")
-REPO_FOR_AUTH = "."   # set from --repo in main(), so a course .env can hold the key
+# Machine auth: the LMS accepts a server-side service key in the x-api-key header
+# (lib/auth/serviceKey.ts in ai-lms-tms). The key is resolved in this order:
+#   1. shell env      LMS_TMS_API_KEY
+#   2. project level  ./.claude/lms_tms_api_key, or LMS_TMS_API_KEY=... in ./.claude/.env / ./.env
+#   3. user level     ~/.claude/lms_tms_api_key, or LMS_TMS_API_KEY=... in ~/.claude/.env
+# Never hardcode it here; this file is pushed to GitHub. A project-level key file must be
+# gitignored — it is a credential.
+
+
+def _read_key_file(path):
+    try:
+        with open(path) as f:
+            text = f.read()
+    except OSError:
+        return ""
+    if os.path.basename(path).endswith(".env"):
+        m = re.search(r"^\s*(?:export\s+)?LMS_TMS_API_KEY\s*=\s*['\"]?([^'\"\n#]+)", text, re.M)
+        return m.group(1).strip() if m else ""
+    return text.strip().splitlines()[0].strip() if text.strip() else ""
+
+
+KEY_ENV_NAMES = ("LMS_TMS_API_KEY", "EXTERNAL_API_KEY_FOR_CLAWDBOT")
+
+# Set from --repo in main(). The project-level key must be looked up under the repo being
+# pushed, not the cwd — otherwise `--repo <other-course>` silently misses that course's key
+# and the run 401s.
+REPO_FOR_AUTH = "."
+
+
+def _resolve_api_key(repo=None):
+    for name in KEY_ENV_NAMES:
+        key = os.environ.get(name, "").strip()
+        if key:
+            return key
+    repo = repo or REPO_FOR_AUTH
+    home = os.path.expanduser("~")
+    for path in (os.path.join(repo, ".claude", "lms_tms_api_key"),
+                 os.path.join(repo, ".claude", ".env"),
+                 os.path.join(repo, ".env"),
+                 os.path.join(home, ".claude", "lms_tms_api_key"),
+                 os.path.join(home, ".claude", ".env")):
+        key = _read_key_file(path)
+        if key:
+            return key
+    return ""
+
+
+def _lms_headers():
+    # Resolved per call, not at import: --repo is parsed after this module loads.
+    key = _resolve_api_key()
+    return {"x-api-key": key} if key else {}
+
+
+def _no_key_message():
+    return (
+        "\nNo API key was found, so LMS-TMS treated this as an anonymous request.\n"
+        "The API accepts a service key in the `x-api-key` header. Provide it as:\n"
+        "  1. export LMS_TMS_API_KEY=<key>              # shell env\n"
+        "  2. ./.claude/lms_tms_api_key                 # project-level key file\n"
+        "  3. ~/.claude/lms_tms_api_key  (chmod 600)    # user level — every repo can push\n"
+        "The value is EXTERNAL_API_KEY_FOR_CLAWDBOT from the ai-lms-tms deployment.\n"
+        "A key file is a credential: keep it gitignored and never commit it.\n\n"
+        "Alternatively, paste the link block by hand — generate it with:\n"
+        "  python3 <gdrive-push-skill>/gdrive_push.py --repo <repo> --links-only")
 
 # Drive subfolder -> (canonical name, lowercase hint for fuzzy match)
 FOLDERS = {
@@ -45,6 +108,9 @@ FOLDERS = {
     "learner_guide": ("Learner Guide", "learner guide"),
     "lesson_plan": ("Lesson Plan", "lesson plan"),
     "assessment": ("Assessment", "assessment"),
+    # The labs are a FOLDER of many files, not a single document, so the
+    # Activities/Lab URL links the folder itself (see take_folder below).
+    "activities": ("Activities", "activit"),
 }
 
 
@@ -160,11 +226,18 @@ def collect_links(root):
          "WA (SAQ) question paper .docx")
     # The practical instrument is EITHER a Case Study OR a Practical Performance — never both.
     take("caseStudyLink", "assessment",
-         lambda n: docx(n) and re.search(r"case study|\(cs\)", n, re.I),
+         # `^cs\b` mirrors the WA rule: papers are named "CS Assessment- <course> - vNN.docx"
+         # as often as "Case Study", and answer keys are already filtered out above.
+         lambda n: docx(n) and re.search(r"^\s*cs\b|case study|\(cs\)", n, re.I),
          "Case Study (CS) question paper .docx")
+    # "Practical Test" and "Practical Performance" are the same instrument — the house naming
+    # varies between courses (the cover page reads "PRACTICAL TEST (PP)" either way), so both
+    # spellings must resolve to the PP field. Without this a "Practical Test - ….docx" silently
+    # reports as missing and the LMS keeps serving whatever stale paper it already had.
     take("practicalPerformanceAssessmentLink", "assessment",
-         lambda n: docx(n) and re.search(r"^\s*pp\b|practical performance|\(pp\)", n, re.I),
-         "PP question paper .docx")
+         lambda n: docx(n) and re.search(
+             r"^\s*pp\b|practical performance|practical test|\(pp\)", n, re.I),
+         "PP / Practical Test question paper .docx")
 
     # A course has exactly ONE practical instrument — a Case Study or a PP, never both.
     # Whichever paper is on Drive IS the instrument; the absence of the other is not "missing",
@@ -178,7 +251,44 @@ def collect_links(root):
     if absent:
         missing[:] = [m for m in missing if not m.startswith(FIELD_LABELS[absent])]
 
+    # ---- Activities / labs. Unlike every field above this links a FOLDER, not a
+    # file: the labs are a whole tree (lab-NN markdown + the template library), and
+    # learners need the folder so they can open any of them.
+    take_folder("activitiesUrl", "activities", root, out, missing)
+
     return out, missing
+
+
+def take_folder(field, folder_key, root, out, missing):
+    """Link a Drive FOLDER (not a file) into an LMS URL field.
+
+    Every other field points at one document; the labs are a whole tree, so the
+    Activities/Lab URL has to be the folder itself.
+    """
+    canonical, hint = FOLDERS[folder_key]
+    # find_dir aborts the run when a folder is absent, which is right for the
+    # courseware folders but too harsh here: a course may legitimately have no
+    # labs. Resolve it leniently and report a miss instead.
+    dirs = rc(["lsjson", f"{REMOTE}:", "--dirs-only"], root, parse=True)
+    match = (next((d for d in dirs if d["Name"].strip().lower() == canonical.lower()), None)
+             or next((d for d in dirs if hint in d["Name"].strip().lower()), None))
+    if not match:
+        missing.append(f"{FIELD_LABELS[field]}: no '{canonical}' folder on Drive "
+                       f"(found: {', '.join(d['Name'].strip() for d in dirs) or 'nothing'})")
+        return
+    d = match["Name"]
+    # RECURSIVE count: the labs live in per-lab subfolders (lab1-…/, lab2-…/), so a
+    # top-level-only listing reports a fully populated Activities folder as empty.
+    entries = rc(["lsjson", f"{REMOTE}:{d}", "--files-only", "-R"], root, parse=True)
+    entries = [e for e in entries if not e.get("Path", "").startswith("archive/")]
+    if not entries:
+        missing.append(f"{FIELD_LABELS[field]}: Drive folder '{d.strip()}' holds no files — "
+                       f"run /gdrive-push first so the labs are uploaded")
+        return
+    # share the folder itself, then link it by id
+    rc(["link", f"{REMOTE}:{d}"], root)
+    url = f"https://drive.google.com/drive/folders/{match['ID']}"
+    out[field] = (f"{d.strip()}/ ({len(entries)} file(s))", url)
 
 
 # ------------------------------------------------------- course code (authoritative)
@@ -230,94 +340,15 @@ def course_code_from_courseware(repo):
 
 # ---------------------------------------------------------------------- LMS API
 
-# Machine auth. The LMS API is session-based for humans, but it also accepts a
-# service-principal key (lib/auth/serviceKey.ts in ai-lms-tms) sent as the
-# `x-api-key` header — that is the supported way for a script to call it. Provide
-# the key as LMS_TMS_API_KEY (or EXTERNAL_API_KEY_FOR_CLAWDBOT); a course .env is
-# read too, so a repo can carry its own. Without a key every call 401s.
-
-def _load_env_file(path):
-    out = {}
-    try:
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    k, v = line.split("=", 1)
-                    out[k.strip()] = v.strip().strip('"').strip("'")
-    except OSError:
-        pass
-    return out
-
-
-KEY_NAMES = ("LMS_TMS_API_KEY", "EXTERNAL_API_KEY_FOR_CLAWDBOT")
-
-
-def _key_from_file(path):
-    """A plain-text key file (the whole file is the key)."""
-    try:
-        with open(path, encoding="utf-8") as f:
-            v = f.read().strip()
-        return v or None
-    except OSError:
-        return None
-
-
-def api_key(repo="."):
-    """The service key. Resolution order is the one documented in /tms-push:
-
-      1. shell env            LMS_TMS_API_KEY (or EXTERNAL_API_KEY_FOR_CLAWDBOT)
-      2. project level        ./.claude/lms_tms_api_key, ./.claude/.env, ./.env
-      3. user level           ~/.claude/lms_tms_api_key, ~/.claude/.env
-
-    A key file is a credential: keep it gitignored and never commit it.
-    """
-    for k in KEY_NAMES:
-        if os.environ.get(k):
-            return os.environ[k]
-    for path in (os.path.join(repo, ".claude", "lms_tms_api_key"),
-                 os.path.expanduser("~/.claude/lms_tms_api_key")):
-        v = _key_from_file(path)
-        if v:
-            return v
-    for path in (os.path.join(repo, ".claude", ".env"),
-                 os.path.join(repo, ".env"),
-                 os.path.expanduser("~/.claude/.env")):
-        env = _load_env_file(path)
-        for k in KEY_NAMES:
-            if env.get(k):
-                return env[k]
-    return None
-
-
-def auth_headers(repo="."):
-    key = api_key(repo)
-    return {"x-api-key": key} if key else {}
-
-
-def _no_key_message():
-    return (
-        "\nNo API key was found, so LMS-TMS treated this as an anonymous request.\n"
-        "The API accepts a service key in the `x-api-key` header. Provide it as:\n"
-        "  1. export LMS_TMS_API_KEY=<key>              # shell env\n"
-        "  2. ./.claude/lms_tms_api_key                 # project-level key file\n"
-        "  3. ~/.claude/lms_tms_api_key  (chmod 600)    # user level — every repo can push\n"
-        "The value is EXTERNAL_API_KEY_FOR_CLAWDBOT from the ai-lms-tms deployment.\n"
-        "A key file is a credential: keep it gitignored and never commit it.\n\n"
-        "Alternatively, paste the link block by hand — generate it with:\n"
-        "  python3 <gdrive-push-skill>/gdrive_push.py --repo <repo> --links-only")
-
-
 def get_json(url):
     try:
-        req = urllib.request.Request(url, headers=auth_headers(REPO_FOR_AUTH))
+        req = urllib.request.Request(url, headers=_lms_headers() if url.startswith(API) else {})
         with urllib.request.urlopen(req, timeout=60) as r:
             return json.loads(r.read())
     except urllib.error.HTTPError as e:
         body = e.read()[:300].decode(errors="replace")
-        if e.code in (401, 403):
-            raise SystemExit(f"GET {url} -> {e.code}: {body}" + _no_key_message())
-        raise SystemExit(f"GET {url} -> {e.code}: {body}")
+        hint = _no_key_message() if e.code in (401, 403) else ""
+        raise SystemExit(f"GET {url} -> {e.code}: {body}{hint}")
     except urllib.error.URLError as e:
         raise SystemExit(f"GET {url} failed: {e.reason}")
 
@@ -339,6 +370,8 @@ def check_link(url):
         return False, "NOT public — asks for access"
     m = re.search(r"<title>(.*?)</title>", html, re.S)
     name = (m.group(1) if m else "?").replace(" - Google Drive", "").strip()
+    if "/drive/folders/" in url:
+        return True, f"public folder, serves '{name}'"
     return True, f"public, serves '{name}'"
 
 
@@ -349,18 +382,17 @@ def put_multipart(url, fields):
         body += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n"
                  ).encode() + value.encode() + b"\r\n"
     body += f"--{boundary}--\r\n".encode()
-    hdrs = {"Content-Type": f"multipart/form-data; boundary={boundary}",
-            "Content-Length": str(len(body))}
-    hdrs.update(auth_headers(REPO_FOR_AUTH))
-    req = urllib.request.Request(url, data=body, method="PUT", headers=hdrs)
+    req = urllib.request.Request(
+        url, data=body, method="PUT",
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}",
+                 "Content-Length": str(len(body)), **_lms_headers()})
     try:
         with urllib.request.urlopen(req, timeout=120) as r:
             return r.status, json.loads(r.read() or "{}")
     except urllib.error.HTTPError as e:
-        body_txt = e.read()[:500].decode(errors="replace")
-        if e.code in (401, 403):
-            raise SystemExit(f"PUT {url} -> {e.code}: {body_txt}" + _no_key_message())
-        raise SystemExit(f"PUT {url} -> {e.code}: {body_txt}")
+        body = e.read()[:500].decode(errors="replace")
+        hint = _no_key_message() if e.code in (401, 403) else ""
+        raise SystemExit(f"PUT {url} -> {e.code}: {body}{hint}")
     except urllib.error.URLError as e:
         raise SystemExit(f"PUT {url} failed: {e.reason}")
 
@@ -430,6 +462,7 @@ FIELD_LABELS = {
     "writtenAssessmentLink": "Written Assessment (question paper)",
     "caseStudyLink": "Case Study (question paper)",
     "practicalPerformanceAssessmentLink": "Practical Performance (question paper)",
+    "activitiesUrl": "Activities/Lab URL",
 }
 
 
@@ -442,6 +475,10 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="show the plan; do not write to LMS-TMS")
     ap.add_argument("--allow-missing", action="store_true",
                     help="update only the fields whose file exists on Drive, instead of aborting")
+    ap.add_argument("--only", metavar="FIELD", action="append",
+                    help="write ONLY these LMS fields (repeatable), e.g. --only activitiesUrl. "
+                         "Every other field is left exactly as it is on the LMS. Use when one "
+                         "field is verified good but others are still blocked on QA.")
     a = ap.parse_args()
 
     global REPO_FOR_AUTH
@@ -498,6 +535,22 @@ def main():
 
     print("Resolving courseware files on Google Drive…")
     urls, missing = collect_links(root)
+
+    # --only: restrict the write to an explicit whitelist. Everything else is dropped from
+    # the payload entirely (not blanked), so untouched fields keep their current LMS value.
+    if a.only:
+        unknown = [f for f in a.only if f not in FIELD_LABELS]
+        if unknown:
+            raise SystemExit(f"--only: unknown field(s) {unknown}. "
+                             f"Valid: {', '.join(sorted(FIELD_LABELS))}")
+        absent = [f for f in a.only if f not in urls]
+        if absent:
+            raise SystemExit("--only: no file/folder resolved on Drive for "
+                             f"{[FIELD_LABELS[f] for f in absent]} — nothing to write.")
+        urls = {f: urls[f] for f in a.only}
+        missing = []   # the excluded fields are deliberately untouched, not "missing"
+        print(f"  --only: writing {len(urls)} field(s); all others left untouched on the LMS.")
+
     for field, (name, url) in urls.items():
         print(f"  {FIELD_LABELS[field]:<20} {name}\n  {'':<20} {url}")
 
@@ -547,11 +600,14 @@ def main():
         return after.get(field)
 
     def same_file(a, b):
-        """The LMS normalises Drive URLs (it drops ?usp=sharing), so compare by file ID."""
-        fid = lambda u: (re.search(r"/d/([\w-]+)|[?&]id=([\w-]+)", u or "") or None)
+        """The LMS normalises Drive URLs (it drops ?usp=sharing), so compare by ID.
+        Also matches /drive/folders/<id> for the Activities folder link."""
+        fid = lambda u: (re.search(r"/d/([\w-]+)|/folders/([\w-]+)|[?&]id=([\w-]+)",
+                                   u or "") or None)
         ma, mb = fid(a), fid(b)
         if ma and mb:
-            return (ma.group(1) or ma.group(2)) == (mb.group(1) or mb.group(2))
+            gid = lambda m: m.group(1) or m.group(2) or m.group(3)
+            return gid(ma) == gid(mb)
         return a == b
 
     for field, (name, url) in urls.items():
@@ -570,7 +626,7 @@ def main():
             print(f"  ✗ {must} was blanked by the update — investigate immediately.")
     if not ok:
         sys.exit(1)
-    print("\nAll four courseware URLs are live on the LMS-TMS course page.")
+    print(f"\nAll {len(urls)} courseware URLs are live on the LMS-TMS course page.")
 
 
 if __name__ == "__main__":
