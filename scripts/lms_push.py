@@ -37,6 +37,7 @@ import urllib.request
 
 REMOTE = os.environ.get("GDRIVE_REMOTE", "gdrive")
 API = os.environ.get("LMS_TMS_API", "https://lms-tms.tertiaryinfotech.com")
+REPO_FOR_AUTH = "."   # set from --repo in main(), so a course .env can hold the key
 
 # Drive subfolder -> (canonical name, lowercase hint for fuzzy match)
 FOLDERS = {
@@ -229,27 +230,93 @@ def course_code_from_courseware(repo):
 
 # ---------------------------------------------------------------------- LMS API
 
+# Machine auth. The LMS API is session-based for humans, but it also accepts a
+# service-principal key (lib/auth/serviceKey.ts in ai-lms-tms) sent as the
+# `x-api-key` header — that is the supported way for a script to call it. Provide
+# the key as LMS_TMS_API_KEY (or EXTERNAL_API_KEY_FOR_CLAWDBOT); a course .env is
+# read too, so a repo can carry its own. Without a key every call 401s.
+
+def _load_env_file(path):
+    out = {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    out[k.strip()] = v.strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return out
+
+
+KEY_NAMES = ("LMS_TMS_API_KEY", "EXTERNAL_API_KEY_FOR_CLAWDBOT")
+
+
+def _key_from_file(path):
+    """A plain-text key file (the whole file is the key)."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            v = f.read().strip()
+        return v or None
+    except OSError:
+        return None
+
+
+def api_key(repo="."):
+    """The service key. Resolution order is the one documented in /tms-push:
+
+      1. shell env            LMS_TMS_API_KEY (or EXTERNAL_API_KEY_FOR_CLAWDBOT)
+      2. project level        ./.claude/lms_tms_api_key, ./.claude/.env, ./.env
+      3. user level           ~/.claude/lms_tms_api_key, ~/.claude/.env
+
+    A key file is a credential: keep it gitignored and never commit it.
+    """
+    for k in KEY_NAMES:
+        if os.environ.get(k):
+            return os.environ[k]
+    for path in (os.path.join(repo, ".claude", "lms_tms_api_key"),
+                 os.path.expanduser("~/.claude/lms_tms_api_key")):
+        v = _key_from_file(path)
+        if v:
+            return v
+    for path in (os.path.join(repo, ".claude", ".env"),
+                 os.path.join(repo, ".env"),
+                 os.path.expanduser("~/.claude/.env")):
+        env = _load_env_file(path)
+        for k in KEY_NAMES:
+            if env.get(k):
+                return env[k]
+    return None
+
+
+def auth_headers(repo="."):
+    key = api_key(repo)
+    return {"x-api-key": key} if key else {}
+
+
+def _no_key_message():
+    return (
+        "\nNo API key was found, so LMS-TMS treated this as an anonymous request.\n"
+        "The API accepts a service key in the `x-api-key` header. Provide it as:\n"
+        "  1. export LMS_TMS_API_KEY=<key>              # shell env\n"
+        "  2. ./.claude/lms_tms_api_key                 # project-level key file\n"
+        "  3. ~/.claude/lms_tms_api_key  (chmod 600)    # user level — every repo can push\n"
+        "The value is EXTERNAL_API_KEY_FOR_CLAWDBOT from the ai-lms-tms deployment.\n"
+        "A key file is a credential: keep it gitignored and never commit it.\n\n"
+        "Alternatively, paste the link block by hand — generate it with:\n"
+        "  python3 <gdrive-push-skill>/gdrive_push.py --repo <repo> --links-only")
+
+
 def get_json(url):
     try:
-        with urllib.request.urlopen(url, timeout=60) as r:
+        req = urllib.request.Request(url, headers=auth_headers(REPO_FOR_AUTH))
+        with urllib.request.urlopen(req, timeout=60) as r:
             return json.loads(r.read())
     except urllib.error.HTTPError as e:
         body = e.read()[:300].decode(errors="replace")
         if e.code in (401, 403):
-            # The LMS API needs a signed-in session. This script WRITES to the course
-            # record, so unlike gdrive_push.py there is no offline fallback — say so
-            # plainly instead of leaving a bare 401 for the caller to decode.
-            raise SystemExit(
-                f"GET {url} -> {e.code}: {body}\n\n"
-                "LMS-TMS rejected the request as unauthenticated. This script updates the\n"
-                "course record, so it needs a signed-in session — there is no offline mode.\n\n"
-                "To finish the push:\n"
-                "  1. Sign in to https://lms-tms.tertiaryinfotech.com in this environment, then\n"
-                "     re-run this command; or\n"
-                "  2. Paste the link block by hand — generate it with:\n"
-                "       python3 <gdrive-push-skill>/gdrive_push.py --repo <repo> --links-only\n"
-                "     (that command works offline: it falls back to COURSEWARE_LINK in the\n"
-                "      course .env when the LMS is unreachable).")
+            raise SystemExit(f"GET {url} -> {e.code}: {body}" + _no_key_message())
         raise SystemExit(f"GET {url} -> {e.code}: {body}")
     except urllib.error.URLError as e:
         raise SystemExit(f"GET {url} failed: {e.reason}")
@@ -282,15 +349,18 @@ def put_multipart(url, fields):
         body += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n"
                  ).encode() + value.encode() + b"\r\n"
     body += f"--{boundary}--\r\n".encode()
-    req = urllib.request.Request(
-        url, data=body, method="PUT",
-        headers={"Content-Type": f"multipart/form-data; boundary={boundary}",
-                 "Content-Length": str(len(body))})
+    hdrs = {"Content-Type": f"multipart/form-data; boundary={boundary}",
+            "Content-Length": str(len(body))}
+    hdrs.update(auth_headers(REPO_FOR_AUTH))
+    req = urllib.request.Request(url, data=body, method="PUT", headers=hdrs)
     try:
         with urllib.request.urlopen(req, timeout=120) as r:
             return r.status, json.loads(r.read() or "{}")
     except urllib.error.HTTPError as e:
-        raise SystemExit(f"PUT {url} -> {e.code}: {e.read()[:500].decode(errors='replace')}")
+        body_txt = e.read()[:500].decode(errors="replace")
+        if e.code in (401, 403):
+            raise SystemExit(f"PUT {url} -> {e.code}: {body_txt}" + _no_key_message())
+        raise SystemExit(f"PUT {url} -> {e.code}: {body_txt}")
     except urllib.error.URLError as e:
         raise SystemExit(f"PUT {url} failed: {e.reason}")
 
@@ -373,6 +443,9 @@ def main():
     ap.add_argument("--allow-missing", action="store_true",
                     help="update only the fields whose file exists on Drive, instead of aborting")
     a = ap.parse_args()
+
+    global REPO_FOR_AUTH
+    REPO_FOR_AUTH = a.repo
 
     # The course code is taken FROM THE COURSEWARE ITSELF (deck cover / LG / LP), not from
     # the folder name — a renamed or copied repo folder must never be able to publish one

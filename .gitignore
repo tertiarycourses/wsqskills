@@ -2,3 +2,9 @@ __pycache__/
 *.pyc
 .DS_Store
 node_modules/
+
+# LMS-TMS service key — a credential. Never commit it to this toolchain repo.
+lms_tms_api_key
+**/lms_tms_api_key
+.env
+.env.*

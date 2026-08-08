@@ -1,5 +1,5 @@
 ---
-description: Update the course on lms-tms.tertiaryinfotech.com — set the Trainer Slides / Learner Slides / Learner Guide / Lesson Plan URLs from the course's Google Drive folder, and attach the assessment. QUESTION PAPERS ONLY (WA + PP/CS); the answer keys are trainer-only and never reach the LMS.
+description: Update the course on lms-tms.tertiaryinfotech.com — set the Trainer Slides / Learner Slides / Learner Guide / Lesson Plan / Activities-Lab URLs from the course's Google Drive folder, and attach the assessment. QUESTION PAPERS ONLY (WA + PP/CS); the answer keys are trainer-only and never reach the LMS.
 argument-hint: [course-code | drive-folder-link]   (both optional — resolved from the repo + the LMS)
 ---
 
@@ -14,9 +14,19 @@ Write this course's Google Drive links into its course record on **lms-tms.terti
 ## HARD RULES
 
 1. **QA must pass first.** Run **`/courseware-qa`** — **do not push on a failing audit.**
-2. **The course code is read from the courseware itself** (deck cover / LG / LP) and must match the course being written to. **A mismatch is a hard abort** — this is a live, unauthenticated write to a production course page, and a wrong code silently overwrites a real course.
+2. **The course code is read from the courseware itself** (deck cover / LG / LP) and must match the course being written to. **A mismatch is a hard abort** — this is a live write to a production course page, and a wrong code silently overwrites a real course.
 3. **ASSESSMENT: QUESTION PAPERS ONLY — NEVER THE ANSWER KEYS.** See below.
 4. **Dry-run first, always.**
+
+## API auth
+
+The push goes through the **LMS-TMS REST API** (`GET /api/courses/list`, `GET /api/courses/edit-data`, `PUT /api/courses/update-course`), which requires the machine service key (`EXTERNAL_API_KEY_FOR_CLAWDBOT` in ai-lms-tms) in the `x-api-key` header. The scripts resolve the key automatically, in this order:
+
+1. **Shell env** — `LMS_TMS_API_KEY`
+2. **Project level** — `./.claude/lms_tms_api_key` (plain key file), or `LMS_TMS_API_KEY=…` in `./.claude/.env` / `./.env`
+3. **User level** — `~/.claude/lms_tms_api_key`, or `LMS_TMS_API_KEY=…` in `~/.claude/.env`
+
+If every source is empty the API returns **401** — stop and ask the user for the service key, then store it at the **user level** (`~/.claude/lms_tms_api_key`, `chmod 600`) so every course repo can push, or at the **project level** for a repo-specific key. **A project-level key file is a credential: it must be gitignored and is never pushed to GitHub.**
 
 ## Steps
 
@@ -34,6 +44,7 @@ Write this course's Google Drive links into its course record on **lms-tms.terti
    | Learner Slides URL | the `.pdf` with "slide" in its name in **Learner Guide** (not the trainer folder) |
    | Learner Guide URL | the `.pdf` without "slide" in its name in **Learner Guide** |
    | Lesson Plan URL | the `.pdf` in **Lesson Plan** |
+   | **Activities/Lab URL** | the **Activities** FOLDER itself (the labs are a tree, not one file) |
    | **Written Assessment** | the **WA (SAQ) question paper** — `WA (SAQ) - <Title> - <VER>.docx` |
    | **Practical Performance** *or* **Case Study** | the **PP** *or* **CS** question paper — whichever instrument this course uses |
 
