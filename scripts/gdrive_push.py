@@ -192,6 +192,76 @@ def newest(pattern):
     return hits[-1] if hits else None
 
 
+# ---- .env: the offline record of this course's Drive folder --------------------
+# The folder link normally comes from the caller (or the LMS, in the fuller
+# skills/gdrive-push variant). Both can be unavailable in a headless run, so every
+# successful push records the folder here and a later run can read it back.
+
+def _env_path(repo):
+    return os.path.join(repo, ".env")
+
+
+def _read_env(repo):
+    out = {}
+    try:
+        with open(_env_path(repo), encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    out[k.strip()] = v.strip().strip('"').strip("'")
+    except FileNotFoundError:
+        pass
+    return out
+
+
+def _folder_id(link):
+    if not link:
+        return None
+    m = re.search(r"(?:folders/|[?&]id=)([A-Za-z0-9_-]{10,})", link)
+    return m.group(1) if m else link.strip()
+
+
+def env_folder(repo):
+    """The folder id recorded by a previous push, or None."""
+    env = _read_env(repo)
+    for k in ("COURSEWARE_LINK", "COURSE_LINK", "GDRIVE_FOLDER_ID"):
+        if env.get(k):
+            return _folder_id(env[k])
+    return None
+
+
+def write_env_folder(repo, root):
+    """Record the folder in .env, preserving every other key. Idempotent."""
+    desired = {"COURSE_LINK": f"https://drive.google.com/drive/folders/{root}",
+               "COURSEWARE_LINK": f"https://drive.google.com/drive/folders/{root}",
+               "GDRIVE_FOLDER_ID": root}
+    path = _env_path(repo)
+    try:
+        lines = open(path, encoding="utf-8").read().splitlines()
+    except FileNotFoundError:
+        lines = ["# Google Drive courseware folder for this course",
+                 "# Written automatically by gdrive_push.py.", ""]
+    out, seen = [], set()
+    for line in lines:
+        t = line.strip()
+        if t and not t.startswith("#") and "=" in t:
+            k = t.split("=", 1)[0].strip()
+            if k in desired:
+                if k not in seen:
+                    out.append(f"{k}={desired[k]}"); seen.add(k)
+                continue
+        out.append(line)
+    for k, v in desired.items():
+        if k not in seen:
+            out.append(f"{k}={v}")
+    new = "\n".join(out).rstrip() + "\n"
+    if os.path.exists(path) and open(path, encoding="utf-8").read() == new:
+        return False
+    open(path, "w", encoding="utf-8").write(new)
+    return True
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     dry = "--dry-run" in sys.argv
@@ -199,11 +269,27 @@ def main():
     if "--repo" in sys.argv:
         repo = sys.argv[sys.argv.index("--repo") + 1]
         args = [a for a in args if a != repo]
-    if not args:
-        raise SystemExit("Usage: gdrive_push.py <drive-folder-link-or-id> [--repo DIR] [--dry-run]\n"
-                         "The Google Drive courseware folder link MUST be supplied by the user.")
-    m = re.search(r"folders/([A-Za-z0-9_-]{10,})", args[0])
-    root = m.group(1) if m else args[0]
+    if args:
+        m = re.search(r"folders/([A-Za-z0-9_-]{10,})", args[0])
+        root = m.group(1) if m else args[0]
+        recorded = env_folder(repo)
+        if recorded and recorded != root and "--force-folder" not in sys.argv:
+            raise SystemExit(
+                f"The folder you passed is NOT the one recorded in {_env_path(repo)}:\n"
+                f"  passed: {root}\n  .env:   {recorded}\n"
+                "Refusing to push one course's material into another course's folder.\n"
+                "Re-run with --force-folder if the folder you passed is genuinely correct.")
+    else:
+        root = env_folder(repo)
+        if not root:
+            raise SystemExit(
+                "Usage: gdrive_push.py <drive-folder-link-or-id> [--repo DIR] [--dry-run]\n"
+                "No folder was supplied and no COURSEWARE_LINK is recorded in "
+                f"{_env_path(repo)}.\nSupply the Google Drive courseware folder link once — "
+                "it is written to .env and reused automatically afterwards.")
+        print(f"  using the Courseware Link recorded in .env: {root}")
+    if not dry and write_env_folder(repo, root):
+        print(f"  recorded COURSEWARE_LINK in {_env_path(repo)}")
 
     cw = os.path.join(repo, "courseware")
     deck_ppt = newest(os.path.join(cw, "*v[0-9]*.pptx"))

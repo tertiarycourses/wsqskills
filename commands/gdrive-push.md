@@ -7,11 +7,27 @@ argument-hint: <google-drive-courseware-folder-link>
 
 Push this course repo's current courseware to the user's Google Drive courseware folder. Superseded Drive copies are **moved to `archive/`** (only when the file actually changed); unchanged files are skipped; **nothing on Drive is ever deleted**.
 
-**Folder link (required, user-supplied):** `$ARGUMENTS`
+**Folder link (optional):** `$ARGUMENTS` — resolved automatically when omitted.
 
 ## HARD RULES
 
-1. **Never push without the user's folder link.** If `$ARGUMENTS` is empty or is not a Drive folder link/ID, **ask (AskUserQuestion) and stop** until it is given. Never fall back to a default or remembered folder. The link is `https://drive.google.com/drive/folders/<FOLDER_ID>` — any `/u/N/` only selects a browser profile and is **not** part of the ID.
+1. **Never push to a folder you cannot justify.** The destination is resolved in this
+   order, and the script does this for you:
+   1. `$ARGUMENTS`, when it is a Drive folder link/ID. The link is
+      `https://drive.google.com/drive/folders/<FOLDER_ID>` — any `/u/N/` only selects a
+      browser profile and is **not** part of the ID.
+   2. The course's **Courseware Link on LMS-TMS**, keyed on the `TGS-` code read out of the
+      courseware itself.
+   3. **`COURSEWARE_LINK` in the course `.env`**, written by the previous push — the
+      offline fallback for when the LMS API returns `401 Not authenticated` (it needs a
+      signed-in session, which headless and CI runs do not have).
+
+   Only if **all three** are empty, **ask (AskUserQuestion) and stop**. Never invent a
+   folder or reuse one remembered from another course. Every real push **writes the
+   resolved link back to `.env`**, so the next run works offline; keep `.env` gitignored.
+   If a passed link disagrees with the LMS (or `.env`) link, the push is **refused** unless
+   `--force-folder` — that guard is what stops one course's material landing in another
+   course's folder.
 2. **QA must pass first.** Run **`/courseware-qa`**. **Do not push on a failing audit** — stop, report the failures, fix them, re-audit.
 3. **Push the current build.** The LMS only stores *links*, so whatever lands on Drive is what learners get. Generate the PPT/LG/LP **PDFs** before pushing (`/courseware-gen`).
 4. **Dry-run first, always.** Show the plan, then push for real.

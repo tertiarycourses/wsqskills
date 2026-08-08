@@ -60,6 +60,95 @@ def folder_id(link):
     return m.group(1) if m else link.strip()
 
 
+# ------------------------------------------- .env: the offline record of the course link
+# The LMS API needs an authenticated session, so it 401s in headless/CI runs. The course's
+# .env is the durable local record of the same Courseware Link: every successful push
+# WRITES it, and a push that cannot reach the LMS READS it instead of asking the user to
+# retype the folder. The LMS still wins whenever it is reachable.
+
+ENV_KEYS = ("COURSEWARE_LINK", "COURSE_LINK")   # first key wins on read
+
+
+def env_path(repo):
+    return os.path.join(repo, ".env")
+
+
+def read_env(repo):
+    """{KEY: value} from the course .env (blank/comment lines and inline quotes ignored)."""
+    out = {}
+    try:
+        with open(env_path(repo), encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                out[k.strip()] = v.strip().strip('"').strip("'")
+    except FileNotFoundError:
+        pass
+    return out
+
+
+def courseware_link_from_env(repo):
+    """(link, id) recorded by a previous push, or (None, None)."""
+    env = read_env(repo)
+    for k in ENV_KEYS:
+        if env.get(k):
+            return env[k], folder_id(env[k])
+    return None, None
+
+
+def write_env(repo, link, code=None, title=None):
+    """Record the Courseware Link in the course .env, preserving every other key.
+
+    Idempotent: re-running with the same link rewrites the same file. Returns True if the
+    file changed, so the caller can say so rather than claiming a write that did nothing.
+    """
+    fid = folder_id(link)
+    if not fid:
+        return False
+    desired = {"COURSE_LINK": link, "COURSEWARE_LINK": link, "GDRIVE_FOLDER_ID": fid}
+    path = env_path(repo)
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except FileNotFoundError:
+        lines = [f"# Course: {title}" if title else "# WSQ course",
+                 f"# WSQ Course Code: {code}" if code else "",
+                 "",
+                 "# Google Drive courseware folder for this course",
+                 "# Written automatically by gdrive_push.py — used as the fallback when",
+                 "# the LMS-TMS API is unreachable (it requires an authenticated session).",
+                 ""]
+        lines = [l for l in lines if l != ""] + [""]
+
+    out, seen = [], set()
+    for line in lines:
+        s = line.strip()
+        if s and not s.startswith("#") and "=" in s:
+            k = s.split("=", 1)[0].strip()
+            if k in desired:
+                if k not in seen:
+                    out.append(f"{k}={desired[k]}")
+                    seen.add(k)
+                continue          # drop duplicate/stale copies of the same key
+        out.append(line)
+    for k, v in desired.items():
+        if k not in seen:
+            out.append(f"{k}={v}")
+
+    new = "\n".join(out).rstrip() + "\n"
+    try:
+        with open(path, encoding="utf-8") as f:
+            if f.read() == new:
+                return False
+    except FileNotFoundError:
+        pass
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(new)
+    return True
+
+
 def codes_in_docx_or_pptx(path):
     """Every TGS- course code appearing in an Office file's text (docx/pptx are zipped XML)."""
     found = set()
@@ -341,29 +430,51 @@ def newest(pattern):
 
 
 def resolve_root(repo, given, force):
-    """The destination folder id: the LMS Courseware Link, unless a link was passed."""
+    """The destination folder id.
+
+    Precedence: an explicitly passed link > the LMS Courseware Link > the link recorded in
+    the course .env by a previous push. The .env fallback exists because the LMS API needs
+    an authenticated session and 401s in headless runs — without it a push that cannot
+    reach the LMS has to be re-run by hand with the folder typed out.
+    """
     lms_link = lms_id = None
+    lms_err = None
     try:
         lms_link, code, title = courseware_link_from_lms(repo)
         lms_id = folder_id(lms_link)
         print(f"  LMS Courseware Link ({title or code}): {lms_link}")
     except SystemExit as e:
-        if not given:
-            raise
-        print(f"  ! could not read the Courseware Link from LMS-TMS — {str(e).splitlines()[0]}")
+        lms_err = str(e).splitlines()[0]
+        print(f"  ! could not read the Courseware Link from LMS-TMS — {lms_err}")
+
+    env_link, env_id = courseware_link_from_env(repo)
 
     if not given:
-        return lms_id
-    given_id = folder_id(given)
-    if lms_id and given_id != lms_id and not force:
+        if lms_id:
+            return lms_id
+        if env_id:
+            print(f"  using the Courseware Link recorded in .env: {env_link}")
+            print("    (the LMS was unreachable; re-run once signed in to re-verify it)")
+            return env_id
         raise SystemExit(
-            f"The folder you passed is NOT the course's Courseware Link on LMS-TMS:\n"
-            f"  passed: {given_id}\n  LMS:    {lms_id}\n"
+            (lms_err or "Could not resolve the Courseware Link from LMS-TMS.") +
+            "\nNo COURSEWARE_LINK is recorded in the course .env either.\n"
+            "Pass the folder link explicitly:\n"
+            "  gdrive_push.py <drive-folder-link> --repo <dir>")
+
+    given_id = folder_id(given)
+    # Guard against pushing one course's material into another course's folder. The LMS is
+    # the authority; .env stands in for it only when the LMS could not be read.
+    ref_id, ref_src = (lms_id, "LMS") if lms_id else (env_id, ".env")
+    if ref_id and given_id != ref_id and not force:
+        raise SystemExit(
+            f"The folder you passed is NOT the course's Courseware Link ({ref_src}):\n"
+            f"  passed: {given_id}\n  {ref_src + ':':8}{ref_id}\n"
             "Refusing to push one course's material into another course's folder.\n"
             "Fix the Courseware Link on the course, or re-run with --force-folder if the "
             "folder you passed is genuinely the right one.")
-    if lms_id and given_id != lms_id:
-        print(f"  ! --force-folder: pushing to {given_id}, NOT the LMS link {lms_id}")
+    if ref_id and given_id != ref_id:
+        print(f"  ! --force-folder: pushing to {given_id}, NOT the {ref_src} link {ref_id}")
     return given_id
 
 
@@ -381,6 +492,21 @@ def main():
     root = resolve_root(repo, args[0] if args else None, force)
     if not root:
         raise SystemExit("No Drive folder to push to.")
+
+    # ALWAYS record the resolved folder in the course .env, so the next run still knows
+    # where this course publishes even if the LMS API is unreachable. Skipped on a dry run
+    # so a preview never writes to the repo.
+    if not dry:
+        link = f"https://drive.google.com/drive/folders/{root}"
+        code = None
+        try:
+            code, _ = course_code_from_courseware(repo)
+        except SystemExit:
+            pass
+        if write_env(repo, link, code=code):
+            print(f"  recorded COURSEWARE_LINK in {env_path(repo)}")
+        else:
+            print(f"  COURSEWARE_LINK already current in {env_path(repo)}")
 
     if "--links-only" in argv:
         print_link_block(root)

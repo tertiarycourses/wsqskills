@@ -234,7 +234,23 @@ def get_json(url):
         with urllib.request.urlopen(url, timeout=60) as r:
             return json.loads(r.read())
     except urllib.error.HTTPError as e:
-        raise SystemExit(f"GET {url} -> {e.code}: {e.read()[:300].decode(errors='replace')}")
+        body = e.read()[:300].decode(errors="replace")
+        if e.code in (401, 403):
+            # The LMS API needs a signed-in session. This script WRITES to the course
+            # record, so unlike gdrive_push.py there is no offline fallback — say so
+            # plainly instead of leaving a bare 401 for the caller to decode.
+            raise SystemExit(
+                f"GET {url} -> {e.code}: {body}\n\n"
+                "LMS-TMS rejected the request as unauthenticated. This script updates the\n"
+                "course record, so it needs a signed-in session — there is no offline mode.\n\n"
+                "To finish the push:\n"
+                "  1. Sign in to https://lms-tms.tertiaryinfotech.com in this environment, then\n"
+                "     re-run this command; or\n"
+                "  2. Paste the link block by hand — generate it with:\n"
+                "       python3 <gdrive-push-skill>/gdrive_push.py --repo <repo> --links-only\n"
+                "     (that command works offline: it falls back to COURSEWARE_LINK in the\n"
+                "      course .env when the LMS is unreachable).")
+        raise SystemExit(f"GET {url} -> {e.code}: {body}")
     except urllib.error.URLError as e:
         raise SystemExit(f"GET {url} failed: {e.reason}")
 

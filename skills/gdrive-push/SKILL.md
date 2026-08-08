@@ -9,29 +9,58 @@ Uploads the course's current artifacts into the right subfolders of a Google Dri
 courseware folder, moving all superseded files into an `archive` subfolder first.
 **Upload-only: nothing on Drive is ever deleted.**
 
-## Where the destination folder comes from — the LMS
+## Where the destination folder comes from — the LMS, then `.env`
 
-**No folder link needs to be supplied.** The script reads the course's **Courseware Link**
-field (`courseLink`, DB `courseware_link`) from `lms-tms.tertiaryinfotech.com` via
-`GET /api/courses/edit-data` — the same field `/lms-push` uses — and pushes there.
+**No folder link needs to be supplied.** The destination is resolved in this order:
+
+1. **A link passed as the first argument** — wins over everything (see *Overriding* below).
+2. **The LMS Courseware Link** — the course's `courseLink` field (DB `courseware_link`) read
+   from `lms-tms.tertiaryinfotech.com` via `GET /api/courses/edit-data`, the same field
+   `/lms-push` uses.
+3. **`COURSEWARE_LINK` in the course `.env`** — the offline fallback (below).
 
 The lookup is keyed on the **`TGS-` course code read out of the courseware itself** (the
 deck cover / LG / LP text), never the repo folder name, so a renamed or copied repo cannot
 publish one course's material into another course's Drive folder. If the courseware names
-more than one course code, or the course has no Courseware Link set, the script **aborts
-rather than guessing**.
+more than one course code, the script **aborts rather than guessing**.
 
 ```bash
-python3 <skill-dir>/gdrive_push.py --repo "<course repo>" --dry-run   # folder comes from the LMS
+python3 <skill-dir>/gdrive_push.py --repo "<course repo>" --dry-run   # folder auto-resolved
 ```
 
-**Overriding the folder.** A link passed as the first argument wins, but if it disagrees
-with the LMS Courseware Link the script aborts and prints both ids; re-run with
-`--force-folder` only if the passed folder is genuinely correct. Use the override when the
-course is not in the LMS yet, or when pushing to a scratch/handover folder.
+### The course `.env` — always written, used when the LMS is unreachable
 
-If the LMS lookup fails and no link was passed, ASK the user for the folder link
-(AskUserQuestion) rather than falling back to a remembered or previously used folder.
+**Every real push records the resolved folder in the course's `.env`** at the repo root:
+
+```
+COURSE_LINK=https://drive.google.com/drive/folders/<id>
+COURSEWARE_LINK=https://drive.google.com/drive/folders/<id>
+GDRIVE_FOLDER_ID=<id>
+```
+
+This matters because **the LMS API requires an authenticated session and returns
+`401 Not authenticated` in headless, CI and non-interactive runs.** Without a local record,
+such a run cannot resolve the folder at all and the operator has to retype the link every
+time. With it, the push just works offline.
+
+- The write is **idempotent** and **preserves every other key** in the file — re-running
+  with the same link rewrites the same bytes and reports "already current".
+- A **dry run never writes** `.env`.
+- The **LMS still wins whenever it is reachable**; `.env` is only consulted as a fallback,
+  so a Courseware Link corrected in the LMS is picked up on the next online run.
+- The **cross-course guard still applies offline**: if a passed link disagrees with the
+  `.env` link, the push is refused (naming `.env` as the source) unless `--force-folder`.
+- `.env` holds an internal Drive link — keep it **gitignored**.
+
+**Overriding the folder.** A link passed as the first argument wins, but if it disagrees
+with the reference link (the LMS when reachable, otherwise `.env`) the script aborts and
+prints both ids; re-run with `--force-folder` only if the passed folder is genuinely
+correct. Use the override when the course is not in the LMS yet, or when pushing to a
+scratch/handover folder.
+
+Only if **all three** sources are empty — no link passed, LMS unreachable, and no
+`COURSEWARE_LINK` in `.env` — ASK the user for the folder link (AskUserQuestion) rather
+than falling back to a remembered or previously used folder.
 
 ## Routing
 
