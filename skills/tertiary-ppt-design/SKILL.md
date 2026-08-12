@@ -386,3 +386,34 @@ print(len(bad), bad[:10])                              # must be 0
 ```
 Long titles also need `_fit_title()` (step 29→25→22→20 pt by length) or they wrap through the
 hairline rule — visible immediately on a "— Part 1/2" continuation title.
+
+### Text-fit defects a geometry check will NOT catch (found by rendering, v1.3 QA)
+
+A shape-bounds check (`top + height > slide height`) proves only that the *box* is on the
+slide. It says nothing about whether the **text inside** fits. These six defects all passed the
+geometry check and were caught only by rendering pages to images:
+
+1. **Mid-word truncation.** `label[:42]` slices "…dependencies with uv (creates" — ugly and
+   unreadable. Always truncate on a word boundary with an ellipsis:
+   ```python
+   def _ellipsis(text, limit):
+       t = " ".join(str(text).split())
+       if len(t) <= limit: return t
+       cut = t[:limit]; sp = cut.rfind(" ")
+       if sp > limit*0.55: cut = cut[:sp]
+       return cut.rstrip(" ,.;:-—(") + "…"
+   ```
+2. **Two-line captions overflow their card.** A caption box sized for one line renders two and
+   spills through the card's bottom border. Force **one line**, anchor it near the card bottom
+   (`y + ch − 0.52in`), and shorten the source string (~26 chars) rather than trusting wrap.
+3. **Diamond text spills past the facets.** A diamond's usable text area is only ~50% of its
+   bounding box. 3 lines at 13 pt need roughly **4.6 × 2.7 in**, not 3.5 × 2.0.
+4. **Chart category labels truncate.** Slicing a long topic title (`title[:34]`) shows
+   "Build A Multi Agent App with Gemin". Author **short chart labels** — never slice.
+5. **Footer page numbers off by one.** If the cover draws no footer but still occupies slide 1,
+   a counter starting at 0 makes every later slide read one low. Start the counter at **1** so
+   the first numbered slide prints 2.
+6. **Degenerate ranges.** A grouped label prints "Labs 13–13". Emit `Lab N` when start == end.
+
+**Rule: after any layout change, render the affected slides to PNG and look at them.** The
+geometry check is a floor, not a substitute for looking.

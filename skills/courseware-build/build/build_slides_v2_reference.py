@@ -186,7 +186,7 @@ def label_in(sp, text, size, color, bold=True):
     r.font.color.rgb = color; r.font.name = "Arial"
     return sp
 
-PAGE={"n":0}
+PAGE={"n":1}   # the cover is slide 1 and carries no number, so numbering starts at 2
 def footer(s):
     PAGE["n"]+=1
     txt(s,Inches(0.4),Inches(7.05),Inches(7.5),Inches(0.35),
@@ -195,6 +195,15 @@ def footer(s):
         [[("© 2026 Tertiary Infotech Academy Pte Ltd",9,GREY,False)]],align=PP_ALIGN.CENTER)
     txt(s,Inches(12.4),Inches(7.05),Inches(0.6),Inches(0.35),
         [[(str(PAGE["n"]),9,GREY,False)]],align=PP_ALIGN.RIGHT)
+def _ellipsis(text,limit):
+    """Truncate on a WORD boundary with an ellipsis — never slice mid-word."""
+    t=" ".join(str(text).split())
+    if len(t)<=limit: return t
+    cut=t[:limit]
+    sp=cut.rfind(" ")
+    if sp>limit*0.55: cut=cut[:sp]
+    return cut.rstrip(" ,.;:-—(") + "…"
+
 def _fit_title(title,size=29):
     """Shrink long titles so they never wrap into the hairline rule below."""
     n=len(title)
@@ -326,14 +335,16 @@ def process_map(title,stages,kicker=None,color=BLUE,synthesis=None,animate=True)
         oval(s,int(x+cw/2-bd/2),int(y+Inches(0.34)),bd,bd,color)
         txt(s,int(x+cw/2-bd/2),int(y+Inches(0.34)),bd,bd,[[(str(i+1),24,WHITE,True)]],
             align=PP_ALIGN.CENTER,anchor=MSO_ANCHOR.MIDDLE)
-        # label sits in its own fixed band; the caption gets the remainder — no collision
+        # label sits in its own fixed band; the caption gets a single line beneath it
+        lbl=_ellipsis(lbl,44)
         lsz=13 if len(lbl)<=28 else (12 if len(lbl)<=38 else 11)
-        txt(s,x+Inches(0.14),int(y+Inches(1.08)),cw-Inches(0.28),Inches(0.92),
+        txt(s,x+Inches(0.14),int(y+Inches(1.06)),cw-Inches(0.28),Inches(0.94),
             [[(lbl,lsz,INK,True)]],align=PP_ALIGN.CENTER,anchor=MSO_ANCHOR.MIDDLE,space=0)
         if detail:
-            det=detail if len(detail)<=34 else detail[:31]+"..."
-            txt(s,x+Inches(0.14),int(y+Inches(2.04)),cw-Inches(0.28),int(ch-Inches(2.16)),
-                [[(det,9.5,GREY,False)]],align=PP_ALIGN.CENTER,anchor=MSO_ANCHOR.TOP,space=0)
+            # ONE line only, sized to the card — a 2-line caption overflows the card bottom
+            det=_ellipsis(detail,26)
+            txt(s,x+Inches(0.1),int(y+ch-Inches(0.52)),cw-Inches(0.2),Inches(0.38),
+                [[(det,9,GREY,False)]],align=PP_ALIGN.CENTER,anchor=MSO_ANCHOR.MIDDLE,space=0)
         spids.append(box.shape_id)
         if i<n-1:   # REAL connector in the gap, with an arrowhead
             cy=int(y+ch/2)
@@ -354,8 +365,10 @@ def decision_map(title,question,yes,no,kicker=None,color=VIOLET,note=None):
     """A real decision diamond with two branches drawn as connectors — used for
     'which pattern do I choose' teaching moments."""
     s=head(slide(),title,kicker,kcolor=color)
-    dx,dy,dw,dh=Inches(0.95),Inches(2.9),Inches(3.5),Inches(2.0)
-    d=diamond(s,dx,dy,dw,dh,color); label_in(d,question,13,WHITE)
+    # a diamond's usable text area is ~50% of its box — size generously or text spills
+    # past the facets. 4.6 x 2.7 fits 2-3 short lines at 12pt.
+    dx,dy,dw,dh=Inches(0.85),Inches(2.75),Inches(4.6),Inches(2.7)
+    d=diamond(s,dx,dy,dw,dh,color); label_in(d,question,12,WHITE)
     bx=Inches(6.1); bw=Inches(6.35); bh=Inches(1.5)
     ys=[Inches(2.15),Inches(4.35)]
     for (hdr,items),by,col in zip([yes,no],ys,[TEAL,AMBER]):
@@ -775,7 +788,8 @@ decision_map("Which Agent Pattern Should You Use?",
  kicker="LO3 · DESIGN DECISION",
  note="A common mistake is starting multi-agent. Start single, and split only when the instruction starts listing unrelated responsibilities.")
 chart_slide("Where Course Time Goes — Topic Weighting",
- [t["title"][:34] for t in C.TOPICS],
+ ["Topic 1 — Agentic AI Overview","Topic 2 — Multi-Agent Apps",
+  "Topic 3 — Agentic RAG","Topic 4 — Streamlit App"],
  [("Share of course (%)",[int(str(t["weighting"]).replace("%","") or 0) for t in C.TOPICS])],
  kicker="LESSON PLAN · TIME ALLOCATION",accent=BLUE,kind="column",
  insight="Topic 2 carries the largest weighting because multi-agent orchestration is where most of the assessable practical skill sits — plan your revision accordingly.",
@@ -859,7 +873,9 @@ for t in C.TOPICS:
     while len(groups)<3: groups.append([])
     cards=[]
     for gi,g in enumerate(groups):
-        cards.append((CARD_COLORS[gi], f"Labs {g[0]['num']}–{g[-1]['num']}" if g else "—",
+        _lbl=("—" if not g else (f"Lab {g[0]['num']}" if g[0]['num']==g[-1]['num']
+                                 else f"Labs {g[0]['num']}–{g[-1]['num']}"))
+        cards.append((CARD_COLORS[gi], _lbl,
                       [a["title"] for a in g] if g else ["—"]))
     cards3(f"Hands-On Labs — {t['title']}", cards, kicker="WHAT YOU'LL DO")
     for a in acts:
@@ -869,8 +885,9 @@ for t in C.TOPICS:
         # the lab as a real staged process map (first 5 steps, abridged to stage labels)
         stg=[]
         for (stext,scmd) in a["steps"][:5]:
-            lbl=stext.split(",")[0].split(" and ")[0].strip()
-            stg.append((lbl[:42], (scmd.split("\n")[0][:44] if scmd else "")))
+            lbl=stext.split(",")[0].split(" and ")[0].split(" (")[0].strip()
+            cap=scmd.split("\n")[0].strip() if scmd else ""
+            stg.append((_ellipsis(lbl,44), _ellipsis(cap,26) if cap else ""))
         if len(stg)>=3:
             process_map(f"How Lab {a['num']} Runs", stg,
                         kicker=f"LAB {a['num']} · PROCESS MAP", color=TEAL,
