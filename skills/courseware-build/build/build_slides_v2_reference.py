@@ -7,7 +7,7 @@ big_statement, step_slide, test_slide, brk). Content is driven entirely by
 course_data.py + data_domainN.py so the deck stays 100% aligned with the LP,
 LG and labs.
 """
-import os, sys, copy
+import os, sys, copy, re
 from pptx import Presentation
 from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
@@ -203,6 +203,33 @@ def _ellipsis(text,limit):
     sp=cut.rfind(" ")
     if sp>limit*0.55: cut=cut[:sp]
     return cut.rstrip(" ,.;:-—(") + "…"
+
+def _short_cmd(cmd,limit=30):
+    """Shorten a shell command for a caption. Paths/URLs have no spaces, so a
+    word-boundary ellipsis cuts them mid-token — drop the runner prefix and keep the
+    meaningful tail (the script/target) instead."""
+    c=" ".join(str(cmd).split())
+    for pre in ("uv run python ","uv run ","python3 ","python ","bash ","sh "):
+        if c.startswith(pre): c=c[len(pre):]; break
+    if len(c)<=limit: return c
+    parts=c.split(" ")
+    head=parts[0]
+    rest=" ".join(parts[1:]).strip()
+    if rest:
+        # a URL argument → keep the verb and the host, drop the path
+        m=re.match(r'https?://([^/\s]+)',rest)
+        if m:
+            for cand in (f"{head} {m.group(1)}/…", f"{head} {m.group(1)}"):
+                if len(cand)<=limit: return cand
+        # "git clone …/repo" — keep the verb plus the final path segment
+        tail=rest.rstrip("/").split("/")[-1]
+        cand=f"{head} …/{tail}" if "/" in rest else f"{head} {tail}"
+        if len(cand)<=limit: return cand
+        if len(head)+2<=limit: return _ellipsis(head,limit-2)+" …"
+    if "/" in c:                   # a bare path → keep the last segment
+        tail=c.rstrip("/").split("/")[-1]
+        if len(tail)+2<=limit: return "…/"+tail
+    return _ellipsis(c,limit)
 
 def _fit_title(title,size=29):
     """Shrink long titles so they never wrap into the hairline rule below."""
@@ -887,7 +914,7 @@ for t in C.TOPICS:
         for (stext,scmd) in a["steps"][:5]:
             lbl=stext.split(",")[0].split(" and ")[0].split(" (")[0].strip()
             cap=scmd.split("\n")[0].strip() if scmd else ""
-            stg.append((_ellipsis(lbl,44), _ellipsis(cap,26) if cap else ""))
+            stg.append((_ellipsis(lbl,44), _short_cmd(cap,30) if cap else ""))
         if len(stg)>=3:
             process_map(f"How Lab {a['num']} Runs", stg,
                         kicker=f"LAB {a['num']} · PROCESS MAP", color=TEAL,
