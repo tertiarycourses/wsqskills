@@ -72,6 +72,15 @@ than falling back to a remembered or previously used folder.
 | Assessment | all `assessment/*.docx` (WA + PP papers and answer keys) |
 | Activities | the whole `labs/` tree (structure preserved) |
 
+**Never published — secrets and build artifacts.** The labs sync excludes `.env`,
+`*.pem`, `*.key`, `.venv/`, `venv/`, `node_modules/`, `__pycache__/`, `.git/`,
+`chroma_db/` and `.ipynb_checkpoints/`. The destination folder is shared **"anyone with
+the link can view"**, so a lab `.env` pushed there leaks live API keys to everyone who
+has the courseware link. (`.env.example` / `.env.sample` still sync — they are templates.)
+Two rclone traps: patterns must be **bare**, not `**/`-prefixed (`**/.venv/**` does NOT
+match a top-level `labs/.venv`), and adding any single `--include` flips the filter set
+into allow-list mode and drops everything unlisted.
+
 **Change detection — only changed files are pushed.** Every file's MD5 is compared
 with the Drive copy first; identical files are skipped (no re-upload, no archiving).
 The labs sync uses `rclone sync --checksum --backup-dir Activities/archive`, so
