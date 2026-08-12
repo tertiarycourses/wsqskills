@@ -16,6 +16,8 @@ description: >
 
 # WSQ Slides Skill
 
+**Model policy:** WSQ courseware generation must run on **Claude Opus 5** (`claude-opus-5`), never a Fable/other tier. If you are not on Opus 5, switch before generating (`/model opus`) — courseware quality and house-standard compliance are calibrated on Opus 5.
+
 > **Scope:** This skill (with `wsq-learner-guide` and `wsq-lesson-plan`) applies to **all**
 > Tertiary Infotech Academy WSQ courseware design — not just one course. Swap in the relevant
 > course title, TGS code and content; keep the house standard below.
@@ -59,6 +61,54 @@ not meet the WSQ house standard.
 7. **Visual QA before delivery** — render the new/changed slides to images and inspect for
    overlap, clipping and balance.
 
+7a. **DECK SCALE — slide count must match the course duration.** A WSQ deck that is far
+   short of these bands is under-built and must be beefed up (expand each lab into a full
+   teaching unit, add comparison/decision/worked-example slides, add concept depth from the
+   original deck or authoritative public sources) before delivery:
+
+   | Course duration | Required slide count |
+   |---|---|
+   | 1 day  (8h)  | **80–120 slides** |
+   | 2 days (16h) | **100–150 slides** |
+   | 3 days (24h) | **150–180 slides** |
+   | 4+ days      | **200–250 slides** |
+
+   Check it: `python3 -c "from pptx import Presentation; print(len(Presentation('deck.pptx').slides))"`.
+   Never pad with decorative filler to reach the band — reach it with *substantive* teaching
+   content (rule 7b). If content genuinely runs out, source additional material from the
+   original/legacy deck for the course or reputable public documentation, and keep it aligned
+   to the assessed learning outcomes.
+
+7b. **INSTRUCTIONAL SLIDES MUST BE SUBSTANTIVE — no decorative one-liner slides.** Every
+   teaching slide must carry real instructional load: a **substantive explanation, a
+   comparison, a framework, a worked example, or an analysis**. A slide whose entire body is
+   one or two sentences is a failure unless it is a *section divider* or a *big statement*
+   (which stay deliberately brief). In practice:
+   - A lab/activity is never just "briefing + verify". Expand it to a full unit:
+     **briefing → process map → procedure slides (with the real commands) → verify slide
+     with a troubleshooting band.**
+   - A verify/test slide states the expected result **and** how to diagnose failure.
+   - A concept slide that is a sequence becomes a `process_map`; a choice becomes a
+     `decision_map`; two or more things being weighed becomes a `compare_table`; an API or
+     code idea becomes a `worked_example`.
+   - Density check (from the measured reference): mean **≈28 shapes/slide**, median ≈28.
+     Under ~20 shapes on a non-divider slide means it is under-built.
+
+7c. **RESTRAINED MOTION — transitions and animation are required, distraction is not.**
+   Ship polished motion, never a slideshow that fidgets:
+   - **One transition family for the whole deck.** Content slides `fade` (fast); section
+     dividers `push` (medium). Nothing else. No random/checkerboard/vortex/sound.
+   - **Animation only where it aids teaching** — an appear-on-click *fade* build on
+     **process maps only**, so the trainer reveals one stage at a time. No spins, flies,
+     bounces or zooms; never animate body text or whole slides.
+   - Transitions are applied in one pass at the end of the build so every slide is covered
+     exactly once.
+
+7d. **Process maps must be REAL shapes and REAL connectors** — staged rounded-rectangles
+   joined by actual PowerPoint connectors with arrowheads (`MSO_CONNECTOR.STRAIGHT` +
+   `a:tailEnd`), plus a synthesis band. **Never** type "→" or "▶" into a text box and call it
+   a process; typed glyphs give none of the spacing and read as prose.
+
 8. **Import and reuse ALL the reference diagram components — never hand-roll slide layouts.**
    The deck MUST be built from the visual component helpers shipped in
    `reference/build_slides.py` — import/port **every** one of them into the course's
@@ -69,6 +119,31 @@ not meet the WSQ house standard.
    to a plain bullet slide where a diagram component fits. If the reference gains a new
    diagram type, adopt it too. Verify before delivery that the deck actually *uses* each
    component (e.g. `grep` the builder for every helper name).
+
+9. **Build to the instructional depth of the scheduled course.** Use these normal ranges
+   for **substantive slides**: **1 day: 80–120 slides; 2 days: 100–150 slides; 3 days:
+   150–180 slides; 4 days: 200–250 slides.** For longer or fractional durations, scale
+   proportionally and apply instructional judgement. Use the approved legacy deck as the
+   coverage floor, then deepen or update it with reliable current sources. Do not reach the
+   count by padding. Every instructional slide must teach through a structured explanation,
+   framework, comparison, worked example, process map, diagram, table or evidence-based
+   analysis. **Do not use low-density teaching slides with only one or two comment lines.**
+   Brief title, break and section-divider slides are the only exceptions. Keep detailed
+   click-by-click procedures in the Learner Guide.
+
+10. **Make practical work progressive and cross-artifact aligned.** Sequence labs from
+    simple foundations to intermediate integration and finally advanced/interactive work.
+    Each lab must use a meaningfully different design or scenario, and its level, output,
+    concepts, K/A mapping and acceptance test must match the PPT, Learner Guide, Lesson Plan,
+    workbook and assessment. Rebuild the deck first, then generate the slide map and every
+    dependent artifact from the same source.
+
+11. **Use motion purposefully.** Draw sequences as real process maps with separate stage and
+    connector shapes. Apply one restrained transition style across the deck and use simple
+    entrance builds only where progressive disclosure improves explanation. Never use motion
+    as decoration or as the only way to understand content; the static slide must remain
+    complete and accessible. Preview the slide show in PowerPoint and verify transitions and
+    animations after package generation.
 
 ## Reference implementation (use this to build PPT + LP + LG)
 
@@ -319,3 +394,29 @@ Layout rules that keep QA green: titles ≤ ~48 chars (or they wrap into the div
 `tight_layout(rect=[0,0,1,0.86])` under matplotlib suptitles; `h_pad ≥ 2` for stacked subplots;
 white bbox behind any label sitting ON a chart line; Arial-only glyphs; every generated asset
 must be placed on a slide; aspect-fit images with PIL — never stretch.
+
+## Visual quality bar — follow the measured reference grammar
+
+Before building or revamping any deck, read **`tertiary-ppt-design`**, sections
+"MEASURED GRID SPEC" and "Process, flow and timeline visuals". Those carry exact
+geometry extracted from the shipped Power Automate/Copilot Studio deck v7.4 —
+column widths, the five layers of a concept card, badge and chip sizes, and the
+three process patterns (numbered strip, four-step diagnostic row, two-column
+roadmap).
+
+Two failure modes that pass every colour check and still look flat:
+
+1. **Skipping a layer.** A concept card is panel + accent bar + number badge +
+   title + body (+ optional chip). Drop the badge and the chip and you have a
+   coloured box. Palette equality proves nothing.
+2. **Describing a process instead of drawing one.** If the content is a sequence,
+   a lifecycle or an ordered procedure, it gets a process strip with real ▶ shapes
+   in the gaps — not bullets with arrows typed into the text.
+
+Verify before shipping:
+```python
+from pptx import Presentation; from statistics import mean, median
+c=[len(s.shapes) for s in Presentation("slides.pptx").slides]
+print(mean(c), median(c), max(c))    # target ≈28 / 31 / 45+
+```
+Under ~20 shapes on a non-divider, non-image slide means it is under-built.
