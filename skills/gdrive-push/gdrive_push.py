@@ -293,10 +293,20 @@ def merge_old_versions(root, folder_path, archive_path, dry):
             print(f"    merge:   {name}/  ->  archive/")
             if dry:
                 continue
+            left_behind = 0
             for e in rc(["lsjson", f"{REMOTE}:{folder_path}/{name}"], root, parse=True):
-                rc(["moveto", f"{REMOTE}:{folder_path}/{name}/{e['Name']}",
-                    f"{REMOTE}:{archive_path}/{e['Name']}"], root)
-            rc(["rmdir", f"{REMOTE}:{folder_path}/{name}"], root)
+                try:
+                    rc(["moveto", f"{REMOTE}:{folder_path}/{name}/{e['Name']}",
+                        f"{REMOTE}:{archive_path}/{e['Name']}"], root)
+                except SystemExit as ex:
+                    # e.g. file owned by another account: server-side move needs delete
+                    # permission on the source. Leave it where it is — never delete.
+                    left_behind += 1
+                    print(f"    WARNING: could not move '{name}/{e['Name']}' to archive/ — left in place ({str(ex)[:120]})")
+            if left_behind == 0:
+                rc(["rmdir", f"{REMOTE}:{folder_path}/{name}"], root)
+            else:
+                print(f"    WARNING: '{name}/' kept ({left_behind} unmovable file(s) remain)")
 
 
 def push_folder(root, folder_path, files, dry):
@@ -350,6 +360,19 @@ def push_labs(root, labs_dir, dry):
             "--backup-dir", f"{REMOTE}:{folder_path}/{arch_name}",
             "--exclude", ".DS_Store",
             "--checksum", "-v", "--stats-log-level", "NOTICE"]
+    # NEVER publish secrets or local build artifacts to a link-shared Drive folder.
+    # A lab .env routinely holds live API keys, and .venv/node_modules are rebuildable
+    # junk that would add tens of thousands of files to the sync.
+    # NB: do NOT mix --include here; with rclone an --include turns the filter set into
+    # allow-list mode and everything unlisted is dropped. Exclude the real secret files
+    # only, and leave .env.example/.env.sample matched by nothing (so they sync).
+    # rclone matches a leading "/" at the sync root; a bare name matches at any depth.
+    # Use the bare form for directories so BOTH labs/.venv and labs/x/.venv are caught.
+    for pat in (".env", "*.pem", "*.key",
+                ".venv/**", "venv/**", "node_modules/**",
+                "__pycache__/**", "*.py[cod]", ".git/**",
+                "chroma_db/**", ".ipynb_checkpoints/**"):
+        args += ["--exclude", pat]
     for e in excludes:
         args += ["--exclude", f"/{e}/**"]
     if dry:
@@ -538,10 +561,12 @@ def main():
         push_folder(root, folder_path, files, dry)
 
     labs_dir = os.path.join(repo, "labs")
+    if not os.path.isdir(labs_dir):
+        labs_dir = os.path.join(repo, "activities")   # courses that renamed labs/ -> activities/
     if os.path.isdir(labs_dir):
         push_labs(root, labs_dir, dry)
     else:
-        print("  Activities: no labs/ folder found — skipped")
+        print("  Activities: no labs/ or activities/ folder found — skipped")
     if dry:
         print("Dry run complete — nothing was modified.")
         return
